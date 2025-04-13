@@ -2,6 +2,7 @@
 .dart_tool/
 .packages
 build/
+build/copy
 .flutter-plugins
 .flutter-plugins-dependencies
 .melody/
