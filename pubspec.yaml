@@ -1,0 +1,84 @@
+name: biqoe
+description: "Something"
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+version: 1.0.0+3
+
+environment:
+  sdk: '>=3.3.4 <4.0.0'
+
+dependencies:
+  google_fonts: ^6.2.1
+  firebase_core: ^3.9.0
+  firebase_auth: ^5.2.0
+  google_sign_in: ^6.2.1
+  cloud_firestore: ^5.4.0
+  flutter:
+    sdk: flutter
+  provider: ^6.0.0
+  http: ^1.2.2
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  intl: ^0.19.0
+  firebase_messaging: ^15.2.5
+  pdf: ^3.10.0
+  printing: ^5.6.0
+  path_provider: ^2.0.15
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  table_calendar: ^3.1.0
+  cached_network_image: ^3.2.0
+  flutter_svg: ^2.0.16
+  flutter_localizations:
+    sdk: flutter
+  flutter_markdown: ^0.7.7
+  logger: ^2.0.0
+  url_launcher: ^6.1.5
+  hugeicons: ^0.0.10
+  shared_preferences: ^2.2.2
+  googleapis_auth: ^1.4.0
+  flutter_local_notifications: ^18.0.1
+  cupertino_icons: ^1.0.6
+  flutter_lints: ^5.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_native_splash: ^2.2.15
+  flutter_launcher_icons: ^0.14.3
+  hive_generator: ^2.0.0
+  build_runner: ^2.4.6
+
+# Configuración para flutter_native_splash
+flutter_native_splash:
+  color: "#FFFFFF"  # Fondo blanco
+  android: true
+  ios: true
+
+# Configuración para flutter_launcher_icons
+flutter_launcher_icons:
+  image_path: "assets/images/Biqoe logo5.png"
+  android: true
+  ios: true
+  adaptive_icon_background: "#ffffff"  # Fondo blanco
+  adaptive_icon_foreground: "assets/images/Biqoe logo5.png"
+  splash_color: "#FFFFFF"  # Fondo blanco
+
+flutter:
+  uses-material-design: true
+  fonts:
+    - family: Poppins
+      fonts:
+        - asset: assets/fonts/Poppins/Poppins-Regular.ttf
+        - asset: assets/fonts/Poppins/Poppins-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Poppins/Poppins-Italic.ttf
+  assets:
+    - assets/images/Biqoe logo.svg
+    - assets/images/Biqoe logo1.png
+    - assets/images/Google logo.png
+    - assets/images/Avatar1.png
+    - assets/images/Caracas.svg
+    - assets/images/Pájaros.svg
+    - assets/images/Google maps logo.png
+    - assets/biqoe-app-firebase-adminsdk-fbsvc-067c9b5471.json

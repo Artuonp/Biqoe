@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "685223740510",
+    "firebase_url": "https://biqoe-app-default-rtdb.firebaseio.com",
+    "project_id": "biqoe-app",
+    "storage_bucket": "biqoe-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:685223740510:android:47c849026fe4d7653ea0cf",
+        "android_client_info": {
+          "package_name": "com.biqoe.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "685223740510-7hdfpujjao8471o5f3524mhldljc8vv8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.biqoe.app",
+            "certificate_hash": "e25e5ef3f927bcf5710a61493d14375a2c99ba74"
+          }
+        },
+        {
+          "client_id": "685223740510-m6cfphlpk93dfolsugn9vamdm45q389s.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD6gvIVnsBg9QSdP04gM3qgzEjKI5FjEEU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "685223740510-m6cfphlpk93dfolsugn9vamdm45q389s.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "685223740510-h5q40k5rngicr0l281iafuislnucrr9i.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.biqoe.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
