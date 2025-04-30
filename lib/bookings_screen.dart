@@ -238,7 +238,7 @@ class BookingsScreenState extends State<BookingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${booking['planLocation']} - \$${booking['planPrice']}',
+                    '${booking['planLocation']} - €${booking['planPrice']}',
                     style: GoogleFonts.poppins(
                       fontWeight: FontWeight.bold,
                       color: const Color.fromRGBO(17, 48, 73, 1),
@@ -347,7 +347,7 @@ class BookingsScreenState extends State<BookingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${booking['planLocation']} - \$${booking['planPrice']}',
+                    '${booking['planLocation']} - €${booking['planPrice']}',
                     style: GoogleFonts.poppins(
                       fontWeight: FontWeight.bold,
                       color: const Color.fromRGBO(17, 48, 73, 1),
@@ -437,7 +437,7 @@ class BookingsScreenState extends State<BookingsScreen> {
                 pw.SizedBox(height: 20),
                 pw.Text('Nombre del plan: ${data['planName']}'),
                 pw.Text('Ubicación: ${data['planLocation']}'),
-                pw.Text('Precio: \$${data['totalPrice']}'),
+                pw.Text('Precio: €${data['totalPrice']}'),
                 pw.Text('Método de pago: ${data['paymentMethod']}'),
                 pw.SizedBox(height: 20),
                 pw.Text('Paquetes:',

@@ -238,7 +238,7 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  '\$${(paquete['precio'] ?? 0).toStringAsFixed(2)}',
+                                  '€${(paquete['precio'] ?? 0).toStringAsFixed(2)}',
                                   style: TextStyle(
                                     color: isSelected
                                         ? Colors.white
@@ -314,14 +314,6 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                                     fontFamily: 'Poppins',
                                     color: Color.fromRGBO(17, 48, 73, 1)),
                               ),
-                            ),
-                            trailing: Text(
-                              '\$${(paquete['precio'] ?? 0).toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                  fontSize: 16,
-                                  fontFamily: 'Poppins',
-                                  fontWeight: FontWeight.bold,
-                                  color: Color.fromRGBO(17, 48, 73, 1)),
                             ),
                           )),
                     ],

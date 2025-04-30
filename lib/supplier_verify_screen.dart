@@ -391,7 +391,7 @@ class _SupplierVerifyScreenState extends State<SupplierVerifyScreen> {
             fontWeight: FontWeight.bold),
       ),
       Text(
-        'Pago: \$${totalDolares.toStringAsFixed(2)} | Bs ${totalPriceBs.toStringAsFixed(2)}',
+        'Pago: €${totalDolares.toStringAsFixed(2)} | Bs ${totalPriceBs.toStringAsFixed(2)}',
         style: GoogleFonts.poppins(
             color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14),
       ),

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>685223740510-h5q40k5rngicr0l281iafuislnucrr9i.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.685223740510-h5q40k5rngicr0l281iafuislnucrr9i</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>685223740510-0h9cuvg3mef5gld3mstrd84a3eg31d12.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyDLfNGCP7GY2dwPXE5HQumjT8bP1A_OQ5o</string>
+	<key>GCM_SENDER_ID</key>
+	<string>685223740510</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.biqoe.app</string>
+	<key>PROJECT_ID</key>
+	<string>biqoe-app</string>
+	<key>STORAGE_BUCKET</key>
+	<string>biqoe-app.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:685223740510:ios:9d79a4b0abc8347d3ea0cf</string>
+	<key>DATABASE_URL</key>
+	<string>https://biqoe-app-default-rtdb.firebaseio.com</string>
+</dict>
+</plist>

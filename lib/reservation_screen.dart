@@ -188,11 +188,22 @@ class ReservationScreenState extends State<ReservationScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Error', style: TextStyle(fontFamily: 'Poppins')),
-          content: Text(message),
+          backgroundColor: Colors.white,
+          title: const Text('Error',
+              style: TextStyle(
+                  fontFamily: 'Poppins',
+                  color: Color.fromRGBO(17, 48, 73, 1),
+                  fontWeight: FontWeight.bold)),
+          content: Text(message,
+              style: const TextStyle(
+                  fontFamily: 'Poppins', color: Color.fromRGBO(17, 48, 73, 1))),
           actions: <Widget>[
             TextButton(
-              child: const Text('OK', style: TextStyle(fontFamily: 'Poppins')),
+              child: const Text('OK',
+                  style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontWeight: FontWeight.bold,
+                      color: Color.fromRGBO(17, 48, 73, 1))),
               onPressed: () => Navigator.of(context).pop(),
             ),
           ],
@@ -250,13 +261,22 @@ class ReservationScreenState extends State<ReservationScreen> {
                     ],
                   ),
                 ),
-                Text(
-                  "\$${(packageData.package['precio'] * packageData.numberOfPeople).toStringAsFixed(2)}",
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: const Color.fromRGBO(17, 48, 73, 1),
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      "€${(packageData.package['precio'] * packageData.numberOfPeople).toStringAsFixed(2)}",
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: const Color.fromRGBO(17, 48, 73, 1),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.calendar_today,
+                      color: const Color.fromRGBO(17, 48, 73, 1),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -504,7 +524,7 @@ class ReservationScreenState extends State<ReservationScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
           ),
           child: Text(
-            'Reservar por \$${totalCost.toString()}',
+            'Reservar por €${totalCost.toString()}',
             style: GoogleFonts.poppins(
                 color: Colors.white, fontWeight: FontWeight.bold),
           ),

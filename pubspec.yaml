@@ -2,7 +2,7 @@ name: biqoe
 description: "Something"
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.0.0+3
+version: 1.0.0+7
 
 environment:
   sdk: '>=3.3.4 <4.0.0'
@@ -11,6 +11,7 @@ dependencies:
   google_fonts: ^6.2.1
   firebase_core: ^3.9.0
   firebase_auth: ^5.2.0
+  firebase_analytics: ^11.4.5
   google_sign_in: ^6.2.1
   cloud_firestore: ^5.4.0
   flutter:
@@ -57,11 +58,11 @@ flutter_native_splash:
 
 # Configuración para flutter_launcher_icons
 flutter_launcher_icons:
-  image_path: "assets/images/Biqoe logo5.png"
+  image_path: "assets/images/IconB22.png"
   android: true
   ios: true
   adaptive_icon_background: "#ffffff"  # Fondo blanco
-  adaptive_icon_foreground: "assets/images/Biqoe logo5.png"
+  adaptive_icon_foreground: "assets/images/IconB22.png"
   splash_color: "#FFFFFF"  # Fondo blanco
 
 flutter:
@@ -82,3 +83,4 @@ flutter:
     - assets/images/Pájaros.svg
     - assets/images/Google maps logo.png
     - assets/biqoe-app-firebase-adminsdk-fbsvc-067c9b5471.json
+    - assets/images/IconB22.png

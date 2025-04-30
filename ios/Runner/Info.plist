@@ -47,5 +47,25 @@
 		<true/>
 		<key>UIStatusBarHidden</key>
 		<false/>
+
+		<!-- Permitir cargas arbitrarias por HTTP -->
+		<key>NSAppTransportSecurity</key>
+		<dict>
+			<key>NSAllowsArbitraryLoads</key>
+			<true/>
+		</dict>
+
+		<!-- Configuración para Google Sign-In -->
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>com.googleusercontent.apps.685223740510-h5q40k5rngicr0l281iafuislnucrr9i</string>
+				</array>
+			</dict>
+		</array>
 	</dict>
 </plist>

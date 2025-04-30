@@ -472,7 +472,7 @@ class SavedDestinationsScreenState extends State<SavedDestinationsScreen> {
                             ],
                           ),
                           Text(
-                            '\$$price',
+                            '€$price',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: screenWidth * 0.03,

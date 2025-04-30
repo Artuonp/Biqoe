@@ -9,7 +9,6 @@ import 'bookings_screen.dart';
 import 'saved_destinations_screen.dart';
 import 'settings_screen.dart';
 import 'search_results_screen.dart';
-import 'account_screen.dart';
 import 'destination_detail_screen.dart';
 import 'package:hugeicons/hugeicons.dart';
 
@@ -212,32 +211,6 @@ class SearchScreenState extends State<SearchScreen> {
                             color: const Color.fromRGBO(17, 48, 73, 1),
                           ),
                         ),
-                        GestureDetector(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              PageRouteBuilder(
-                                pageBuilder: (_, __, ___) => AccountScreen(
-                                  userId: widget.userId,
-                                ),
-                                transitionsBuilder: (_, animation, __, child) {
-                                  return FadeTransition(
-                                    opacity: animation,
-                                    child: child,
-                                  );
-                                },
-                                transitionDuration:
-                                    const Duration(milliseconds: 600),
-                              ),
-                            );
-                          },
-                          child: CircleAvatar(
-                            radius: screenWidth * 0.05,
-                            backgroundImage:
-                                const AssetImage('assets/images/Avatar1.png'),
-                            backgroundColor: Colors.transparent,
-                          ),
-                        ),
                       ],
                     ),
                     SizedBox(height: screenHeight * 0.01),
@@ -285,7 +258,7 @@ class SearchScreenState extends State<SearchScreen> {
                           children: [
                             Expanded(
                               child: Text(
-                                'Encuentra un nuevo destino',
+                                'Encuentra un nuevo plan',
                                 style: TextStyle(
                                   color: Colors.grey,
                                   fontSize: screenWidth * 0.04,
@@ -462,7 +435,11 @@ class SearchScreenState extends State<SearchScreen> {
                           if (!snapshot.hasData ||
                               snapshot.data!.docs.isEmpty) {
                             return const Center(
-                                child: Text('No hay destinos destacados'));
+                                child: Text('No hay opciones destacados',
+                                    style: TextStyle(
+                                        color: Color.fromRGBO(17, 48, 73, 1),
+                                        fontSize: 16,
+                                        fontFamily: 'Poppins')));
                           }
 
                           final destinations = snapshot.data!.docs;
@@ -884,7 +861,7 @@ class SearchScreenState extends State<SearchScreen> {
                             ],
                           ),
                           Text(
-                            '\$$price',
+                            '€$price',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: screenWidth * 0.03,

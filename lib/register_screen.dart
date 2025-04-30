@@ -135,13 +135,15 @@ class RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-// Solicitar permisos de notificaciones
+    // Solicitar permisos de notificaciones
     bool notificationsAllowed = await requestNotificationPermissions();
     if (!notificationsAllowed) {
       return;
     }
 
     try {
+      // Verificar si el correo ya está registrado
+
       // Intentar crear el usuario con Firebase Authentication
       UserCredential userCredential =
           await FirebaseAuth.instance.createUserWithEmailAndPassword(
@@ -205,6 +207,17 @@ class RegisterScreenState extends State<RegisterScreen> {
   }
 
   // Función para autenticarse con Google
+  /// 1️⃣ Helper para comprobar en Firestore si un email ya está registrado
+  Future<bool> emailYaRegistrado(String email) async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('usuarios')
+        .where('email', isEqualTo: email)
+        .limit(1)
+        .get();
+    return snapshot.docs.isNotEmpty;
+  }
+
+  /// 2️⃣ Método completo de registro con Google, usando el helper anterior
   Future<void> signInWithGoogle() async {
     String phone = phoneController.text.trim();
     if (!isValidPhone(phone)) {
@@ -214,57 +227,53 @@ class RegisterScreenState extends State<RegisterScreen> {
 
     // Solicitar permisos de notificaciones
     bool notificationsAllowed = await requestNotificationPermissions();
-    if (!notificationsAllowed) {
-      return;
-    }
+    if (!notificationsAllowed) return;
 
     try {
-      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+      // Asegurarse de empezar limpio
+      await GoogleSignIn().signOut();
 
+      // 1) Selección de cuenta Google
+      final googleUser = await GoogleSignIn().signIn();
       if (googleUser == null) {
+        _showErrorMessage('Registro con Google cancelado.');
         return;
       }
 
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
+      final email = googleUser.email;
 
-      final AuthCredential credential = GoogleAuthProvider.credential(
+      // 2) Comprueba en Firestore si ya existe ese email
+      if (await emailYaRegistrado(email)) {
+        _showErrorMessage('Esta cuenta de Google ya está siendo utilizada');
+        return;
+      }
+
+      // 3) Autenticación en Firebase
+      final googleAuth = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
-
-      UserCredential userCredential =
+      final userCredential =
           await FirebaseAuth.instance.signInWithCredential(credential);
 
-      // Obtener el UID del usuario
+      // 4) Guarda en Firestore
       String uid = userCredential.user!.uid;
-
-      // Obtener el token del dispositivo
       String? deviceToken = await FirebaseMessaging.instance.getToken();
-
-      // Agregar el usuario a la colección de Firestore si no existe
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('usuarios')
-          .doc(uid)
-          .get();
-      if (!userDoc.exists) {
-        await FirebaseFirestore.instance.collection('usuarios').doc(uid).set({
-          'name': googleUser.displayName,
-          'isAdmin': false,
-          'isSupplier': false,
-          'email': userCredential.user!.email,
-          'verified': true, // Campo para verificar el correo
-          'celular': phone,
-          'deviceToken': deviceToken, // Guardar el token del dispositivo
-        });
-      }
+      await FirebaseFirestore.instance.collection('usuarios').doc(uid).set({
+        'name': googleUser.displayName,
+        'isAdmin': false,
+        'isSupplier': false,
+        'email': email,
+        'verified': true,
+        'celular': phone,
+        'deviceToken': deviceToken,
+      });
 
       if (!mounted) return;
-
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
       );
-
       _showSuccessMessage('Registro exitoso con Google.');
     } catch (e) {
       _showErrorMessage(
@@ -306,6 +315,18 @@ class RegisterScreenState extends State<RegisterScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color.fromARGB(255, 243, 247, 254), // Fondo claro
+      appBar: AppBar(
+        backgroundColor:
+            const Color.fromARGB(255, 243, 247, 254), // Fondo del AppBar
+        elevation: 0, // Sin sombra
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back,
+              color: Color.fromRGBO(17, 48, 73, 1)),
+          onPressed: () {
+            Navigator.of(context).pop(); // Regresa a la pantalla anterior
+          },
+        ),
+      ),
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(16.0),

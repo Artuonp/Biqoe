@@ -98,6 +98,10 @@ class LoginFormScreenState extends State<LoginFormScreen> {
 
   Future<void> signInWithGoogle() async {
     try {
+      // Cerrar sesión de cualquier cuenta de Google previamente autenticada
+      await GoogleSignIn().signOut();
+
+      // Mostrar el selector de cuentas de Google
       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
 
       if (googleUser == null) {
@@ -172,6 +176,18 @@ class LoginFormScreenState extends State<LoginFormScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color.fromARGB(255, 243, 247, 254),
+      appBar: AppBar(
+        backgroundColor:
+            const Color.fromARGB(255, 243, 247, 254), // Fondo del AppBar
+        elevation: 0, // Sin sombra
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back,
+              color: Color.fromRGBO(17, 48, 73, 1)),
+          onPressed: () {
+            Navigator.of(context).pop(); // Regresa a la pantalla anterior
+          },
+        ),
+      ),
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -214,7 +230,7 @@ class LoginFormScreenState extends State<LoginFormScreen> {
               TextField(
                 controller: _passwordController,
                 decoration: const InputDecoration(
-                  hintText: 'Correo electrónico',
+                  hintText: 'Contraseña',
                   border: UnderlineInputBorder(),
                   hintStyle: TextStyle(
                     fontFamily: 'Poppins',

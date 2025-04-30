@@ -45,6 +45,8 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
   final TextEditingController userController = TextEditingController();
   final TextEditingController beneficiaryController = TextEditingController();
 
+  bool _isProcessing = false;
+
   @override
   void initState() {
     super.initState();
@@ -104,57 +106,93 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
   }
 
   void _completeReservation(BuildContext context) async {
-    final documentId =
-        FirebaseFirestore.instance.collection('reservas').doc().id;
-    final code = _generateRandomCode(10);
+    setState(() {
+      _isProcessing = true; // Deshabilitar el botón
+    });
 
-    // Obtener datos del usuario desde la colección 'usuarios'
-    final userSnapshot = await FirebaseFirestore.instance
-        .collection('usuarios')
-        .doc(widget.userId)
-        .get();
-    String userName = '';
-    String userCelular = '';
-    String userEmail = '';
-    if (userSnapshot.exists) {
-      final userData = userSnapshot.data() as Map<String, dynamic>;
-      userName = userData['name'] ?? '';
-      userCelular = userData['celular'] ?? '';
-      userEmail = userData['email'] ?? '';
-    }
+    try {
+      final documentId =
+          FirebaseFirestore.instance.collection('reservas').doc().id;
+      final code = _generateRandomCode(10);
 
-    // Obtener la tasa y calcular totalPriceBs
-    final configSnapshot =
-        await FirebaseFirestore.instance.collection('config').doc('tasa').get();
-    double tasa = 67.0;
-    if (configSnapshot.exists) {
-      tasa = configSnapshot.get('valor') ?? 67.0;
-    }
-    double totalPriceBs = widget.totalPrice * tasa;
+      // Obtener datos del usuario desde la colección 'usuarios'
+      final userSnapshot = await FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(widget.userId)
+          .get();
+      String userName = '';
+      String userCelular = '';
+      String userEmail = '';
+      if (userSnapshot.exists) {
+        final userData = userSnapshot.data() as Map<String, dynamic>;
+        userName = userData['name'] ?? '';
+        userCelular = userData['celular'] ?? '';
+        userEmail = userData['email'] ?? '';
+      }
 
-    // Agregar la reserva mediante el provider (si es que lo usas)
-    final context = this.context; // Guarda el contexto en una variable
-    if (context.mounted) {
-      // Verifica si el contexto todavía está disponible
-      await Provider.of<BookingProvider>(context, listen: false).addBooking(
-        userId: widget.userId,
-        planName: widget.planName,
-        name: userName,
-        email: userEmail,
-        celular: userCelular,
-        totalPriceBs: totalPriceBs,
-        planLocation: widget.planLocation,
-        planPrice: widget.totalPrice,
-        supplier: widget.supplier,
-        paymentMethod: widget.paymentMethod,
-        transactionCode: transactionCodeController.text,
-        receipt: receiptController.text,
-        documentId: documentId,
-        code: code,
-        cedula: idController.text,
-        numero: numberController.text,
-        correo: emailController.text,
-        packagesData: widget.packagesData
+      // Obtener la tasa y calcular totalPriceBs
+      final configSnapshot = await FirebaseFirestore.instance
+          .collection('config')
+          .doc('tasa')
+          .get();
+      double tasa = 67.0;
+      if (configSnapshot.exists) {
+        tasa = configSnapshot.get('valor') ?? 67.0;
+      }
+      double totalPriceBs = widget.totalPrice * tasa;
+
+      // Agregar la reserva mediante el provider (si es que lo usas)
+      if (context.mounted) {
+        await Provider.of<BookingProvider>(context, listen: false).addBooking(
+          userId: widget.userId,
+          planName: widget.planName,
+          name: userName,
+          email: userEmail,
+          celular: userCelular,
+          totalPriceBs: totalPriceBs,
+          planLocation: widget.planLocation,
+          planPrice: widget.totalPrice,
+          supplier: widget.supplier,
+          paymentMethod: widget.paymentMethod,
+          transactionCode: transactionCodeController.text,
+          receipt: receiptController.text,
+          documentId: documentId,
+          code: code,
+          cedula: idController.text,
+          numero: numberController.text,
+          correo: emailController.text,
+          packagesData: widget.packagesData
+              .map((package) => {
+                    'numero': package['numero'],
+                    'fecha': DateFormat('yyyy-MM-dd').format(package['fecha']),
+                    'hora': package['hora'],
+                    'personas': package['personas'],
+                    'miniDescripcion': package['miniDescripcion'],
+                  })
+              .toList(),
+        );
+      }
+
+      // Crear el documento de reserva con los nuevos campos
+      await FirebaseFirestore.instance
+          .collection('reservas')
+          .doc(documentId)
+          .set({
+        'estado': 'pendiente',
+        'userId': widget.userId,
+        'paymentMethod': widget.paymentMethod,
+        'planName': widget.planName,
+        'planLocation': widget.planLocation,
+        'totalPrice': widget.totalPrice,
+        'totalPriceBs': totalPriceBs,
+        'supplier': widget.supplier,
+        'transactionCode': transactionCodeController.text,
+        'receipt': receiptController.text,
+        'code': code,
+        'name': userName,
+        'celular': userCelular,
+        'email': userEmail,
+        'packages': widget.packagesData
             .map((package) => {
                   'numero': package['numero'],
                   'fecha': DateFormat('yyyy-MM-dd').format(package['fecha']),
@@ -163,83 +201,65 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
                   'miniDescripcion': package['miniDescripcion'],
                 })
             .toList(),
-      );
-    }
-    // Crear el documento de reserva con los nuevos campos
-    await FirebaseFirestore.instance
-        .collection('reservas')
-        .doc(documentId)
-        .set({
-      'estado': 'pendiente',
-      'userId': widget.userId,
-      'paymentMethod': widget.paymentMethod,
-      'planName': widget.planName,
-      'planLocation': widget.planLocation,
-      'totalPrice': widget.totalPrice,
-      'totalPriceBs': totalPriceBs,
-      'supplier': widget.supplier,
-      'transactionCode': transactionCodeController.text,
-      'receipt': receiptController.text,
-      'code': code,
-      // Agregar datos del usuario de la colección 'usuarios'
-      'name': userName,
-      'celular': userCelular,
-      'email': userEmail,
-      'packages': widget.packagesData
-          .map((package) => {
-                'numero': package['numero'],
-                'fecha': DateFormat('yyyy-MM-dd').format(package['fecha']),
-                'hora': package['hora'],
-                'personas': package['personas'],
-                'miniDescripcion': package['miniDescripcion'],
-              })
-          .toList(),
-      if (widget.paymentMethod == 'Pago móvil') ...{
-        'cedula': idController.text,
-        'numero': numberController.text,
-        'banco': bankController.text,
-      },
-      if (widget.paymentMethod == 'Zelle') ...{
-        'correo': emailController.text,
-        'beneficiario': beneficiaryController.text,
-      },
-      if (widget.paymentMethod == 'Zinli') ...{
-        'correo': emailController.text,
-        'beneficiario': beneficiaryController.text,
-      },
-      if (widget.paymentMethod == 'Binance') ...{
-        'correo': emailController.text,
-        'beneficiario': beneficiaryController.text,
-      },
-      if (widget.paymentMethod == 'Efectivo') ...{
-        'cedula': idController.text,
-      },
-    });
+        if (widget.paymentMethod == 'Pago móvil') ...{
+          'cedula': idController.text,
+          'numero': numberController.text,
+          'banco': bankController.text,
+        },
+        if (widget.paymentMethod == 'Zelle') ...{
+          'correo': emailController.text,
+          'beneficiario': beneficiaryController.text,
+        },
+        if (widget.paymentMethod == 'Zinli') ...{
+          'correo': emailController.text,
+          'beneficiario': beneficiaryController.text,
+        },
+        if (widget.paymentMethod == 'Binance') ...{
+          'correo': emailController.text,
+          'beneficiario': beneficiaryController.text,
+        },
+        if (widget.paymentMethod == 'Efectivo') ...{
+          'cedula': idController.text,
+        },
+      });
 
-// Obtener el token del supplier
-    final supplierSnapshot = await FirebaseFirestore.instance
-        .collection('usuarios')
-        .doc(widget.supplier)
-        .get();
+      // Obtener el token del supplier
+      final supplierSnapshot = await FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(widget.supplier)
+          .get();
 
-    if (supplierSnapshot.exists) {
-      final supplierData = supplierSnapshot.data() as Map<String, dynamic>;
-      final deviceToken = supplierData['deviceToken'];
+      if (supplierSnapshot.exists) {
+        final supplierData = supplierSnapshot.data() as Map<String, dynamic>;
+        final deviceToken = supplierData['deviceToken'];
 
-      if (deviceToken != null && deviceToken.isNotEmpty) {
-        // Enviar notificación al supplier
-        await _sendNotificationToSupplier(deviceToken);
+        if (deviceToken != null && deviceToken.isNotEmpty) {
+          // Enviar notificación al supplier
+          await _sendNotificationToSupplier(deviceToken);
+        }
       }
-    }
 
-    if (mounted) {
-      if (context.mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-              builder: (context) => BookingsScreen(userId: widget.userId)),
-        );
-      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.pushReplacement(
+            this.context,
+            MaterialPageRoute(
+              builder: (context) => BookingsScreen(userId: widget.userId),
+            ),
+          );
+        }
+      });
+    } catch (e) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _showErrorDialog(
+              context, 'Ocurrió un error al completar la reserva.');
+        }
+      });
+    } finally {
+      setState(() {
+        _isProcessing = false; // Habilitar el botón nuevamente
+      });
     }
   }
 
@@ -329,11 +349,25 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Error'),
-          content: Text(message),
+          backgroundColor: Colors.white,
+          title: const Text('Error',
+              style: TextStyle(
+                  color: Color.fromRGBO(17, 48, 73, 1),
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'Poppins')),
+          content: Text(
+            message,
+            style: TextStyle(
+                color: const Color.fromRGBO(17, 48, 73, 1),
+                fontFamily: 'Poppins'),
+          ),
           actions: <Widget>[
             TextButton(
-              child: const Text('OK'),
+              child: const Text('OK',
+                  style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontWeight: FontWeight.bold,
+                      color: Color.fromRGBO(17, 48, 73, 1))),
               onPressed: () {
                 Navigator.of(context).pop();
               },
@@ -370,7 +404,7 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
                     borderRadius: BorderRadius.circular(8.0),
                   ),
                   child: Text(
-                    'Tasa: ${tasa.toStringAsFixed(2)} Bs/\$',
+                    'Tasa: ${tasa.toStringAsFixed(2)} Bs/€',
                     style: GoogleFonts.poppins(
                         color: const Color.fromRGBO(17, 48, 73, 1),
                         fontWeight: FontWeight.bold),
@@ -409,7 +443,7 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                          'Monto en dólares: \$${widget.totalPrice.toStringAsFixed(2)}', // Total
+                          'Monto en euros: €${widget.totalPrice.toStringAsFixed(2)}', // Total
                           style: GoogleFonts.poppins(
                               fontSize: 16,
                               color: const Color.fromRGBO(17, 48, 73, 1))),
@@ -617,44 +651,55 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
               const SizedBox(height: 16),
               Center(
                 child: ElevatedButton(
-                  onPressed: () {
-                    if (widget.paymentMethod == 'Efectivo' &&
-                        idController.text.isEmpty) {
-                      _showErrorDialog(context,
-                          'Por favor, ingrese la cédula de la persona que pagará en efectivo.');
-                    } else if (widget.paymentMethod == 'Pago móvil' &&
-                        (transactionCodeController.text.isEmpty ||
-                            idController.text.isEmpty ||
-                            numberController.text.isEmpty)) {
-                      _showErrorDialog(context,
-                          'Por favor, ingrese la referencia de la transacción, la cédula y el número de celular de quien realizó el pago móvil.');
-                    } else if (widget.paymentMethod == 'Zelle' &&
-                        (userController.text.isEmpty ||
-                            emailController.text.isEmpty)) {
-                      _showErrorDialog(context,
-                          'Por favor, ingrese el nombre y el correo de quien hizo la transferencia.');
-                    } else if (widget.paymentMethod == 'Zinli' &&
-                        (userController.text.isEmpty ||
-                            emailController.text.isEmpty)) {
-                      _showErrorDialog(context,
-                          'Por favor, ingrese el nombre y el correo de quien hizo la transferencia.');
-                    } else if (widget.paymentMethod == 'Binance' &&
-                        (userController.text.isEmpty ||
-                            emailController.text.isEmpty)) {
-                      _showErrorDialog(context,
-                          'Por favor, ingrese el nombre y el correo de quien hizo la transferencia.');
-                    } else {
-                      _completeReservation(context);
-                    }
-                  },
+                  onPressed: _isProcessing
+                      ? null // Deshabilitar el botón si está procesando
+                      : () {
+                          if (widget.paymentMethod == 'Efectivo' &&
+                              idController.text.isEmpty) {
+                            _showErrorDialog(context,
+                                'Por favor, ingrese la cédula de la persona que pagará en efectivo.');
+                          } else if (widget.paymentMethod == 'Pago móvil' &&
+                              (transactionCodeController.text.isEmpty ||
+                                  idController.text.isEmpty ||
+                                  numberController.text.isEmpty)) {
+                            _showErrorDialog(context,
+                                'Por favor, ingrese la referencia de la transacción, la cédula y el número de celular de quien realizó el pago móvil.');
+                          } else if (widget.paymentMethod == 'Zelle' &&
+                              (userController.text.isEmpty ||
+                                  emailController.text.isEmpty)) {
+                            _showErrorDialog(context,
+                                'Por favor, ingrese el nombre y el correo de quien hizo la transferencia.');
+                          } else if (widget.paymentMethod == 'Zinli' &&
+                              (userController.text.isEmpty ||
+                                  emailController.text.isEmpty)) {
+                            _showErrorDialog(context,
+                                'Por favor, ingrese el nombre y el correo de quien hizo la transferencia.');
+                          } else if (widget.paymentMethod == 'Binance' &&
+                              (userController.text.isEmpty ||
+                                  emailController.text.isEmpty)) {
+                            _showErrorDialog(context,
+                                'Por favor, ingrese el nombre y el correo de quien hizo la transferencia.');
+                          } else {
+                            _completeReservation(context);
+                          }
+                        },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
                   ),
-                  child: Text(
-                    'Completar reserva',
-                    style: GoogleFonts.poppins(
-                        color: Colors.white, fontWeight: FontWeight.bold),
-                  ),
+                  child: _isProcessing
+                      ? const SizedBox(
+                          width: 20, // Ancho del indicador
+                          height: 20, // Alto del indicador
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.0, // Grosor del indicador
+                          ),
+                        )
+                      : Text(
+                          'Completar reserva',
+                          style: GoogleFonts.poppins(
+                              color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
                 ),
               ),
               const SizedBox(height: 16),

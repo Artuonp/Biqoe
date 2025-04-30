@@ -120,7 +120,7 @@ class DestinationsScreenState extends State<DestinationsScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
-  }
+  } // Código existente
 
   @override
   Widget build(BuildContext context) {
@@ -141,14 +141,12 @@ class DestinationsScreenState extends State<DestinationsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Botón de flecha en la parte superior
                   IconButton(
                     icon: const Icon(Icons.arrow_back,
                         color: Colors.black, size: 25),
                     onPressed: () => Navigator.pop(context),
                   ),
                   SizedBox(height: screenHeight * 0.0001),
-                  // Barra de búsqueda con icono de ajuste
                   Row(
                     children: [
                       Expanded(
@@ -166,7 +164,7 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                                 child: TextField(
                                   controller: _searchController,
                                   decoration: const InputDecoration(
-                                    hintText: 'Encuentra un nuevo destino',
+                                    hintText: 'Encuentra un nuevo plan',
                                     border: InputBorder.none,
                                     contentPadding:
                                         EdgeInsets.fromLTRB(16, 0, 8, 0),
@@ -180,10 +178,7 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                                 ),
                               ),
                               const Padding(
-                                // ✅ Envuelve el icono en un Padding
-                                padding: EdgeInsets.only(
-                                    right:
-                                        8.0), // ✅ Añade espacio a la derecha del ícono
+                                padding: EdgeInsets.only(right: 8.0),
                                 child: Icon(Icons.search, color: Colors.grey),
                               ),
                             ],
@@ -252,7 +247,10 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                   if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                     return const Center(
                       child: Text('No hay destinos disponibles',
-                          style: TextStyle(fontFamily: 'Poppins')),
+                          style: TextStyle(
+                              fontFamily: 'Poppins',
+                              color: Color.fromRGBO(17, 48, 73, 1),
+                              fontSize: 16)),
                     );
                   }
 
@@ -277,24 +275,8 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                         matchesSearchText;
                   }).toList();
 
-                  // Nuevo sorting basado en paquetes
-                  destinations.sort((a, b) {
-                    final paquetesA =
-                        (a.data() as Map<String, dynamic>)['paquetes']
-                                as List<dynamic>? ??
-                            [];
-                    final paquetesB =
-                        (b.data() as Map<String, dynamic>)['paquetes']
-                                as List<dynamic>? ??
-                            [];
-
-                    final minPriceA = _getMinPrice(paquetesA);
-                    final minPriceB = _getMinPrice(paquetesB);
-
-                    return sortByPriceDescending
-                        ? minPriceB.compareTo(minPriceA)
-                        : minPriceA.compareTo(minPriceB);
-                  });
+                  // Mezclar los destinos en un orden aleatorio
+                  destinations.shuffle();
 
                   return ListView.builder(
                     itemCount: destinations.length,
@@ -345,8 +327,7 @@ class DestinationsScreenState extends State<DestinationsScreen> {
       bottomNavigationBar: Container(
         height: screenHeight * 0.1,
         decoration: BoxDecoration(
-          color: const Color.fromARGB(255, 255, 255, 255)
-              .withOpacity(1), // Fondo blanco sólido
+          color: const Color.fromARGB(255, 255, 255, 255).withOpacity(1),
           borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(30),
             topRight: Radius.circular(30),
@@ -409,16 +390,15 @@ class DestinationsScreenState extends State<DestinationsScreen> {
             items: [
               BottomNavigationBarItem(
                 icon: HugeIcon(
-                  icon: HugeIcons.strokeRoundedHome02, // Icono personalizado
-                  color:
-                      Color.fromRGBO(17, 48, 73, 1), // Mismo color para todos
+                  icon: HugeIcons.strokeRoundedHome02,
+                  color: Color.fromRGBO(17, 48, 73, 1),
                   size: 24.0,
                 ),
                 label: 'Home',
               ),
               BottomNavigationBarItem(
                 icon: HugeIcon(
-                  icon: HugeIcons.strokeRoundedTicket03, // Icono personalizado
+                  icon: HugeIcons.strokeRoundedTicket03,
                   color: Color.fromRGBO(17, 48, 73, 1),
                   size: 24.0,
                 ),
@@ -426,7 +406,7 @@ class DestinationsScreenState extends State<DestinationsScreen> {
               ),
               BottomNavigationBarItem(
                 icon: HugeIcon(
-                  icon: HugeIcons.strokeRoundedFavourite, // Icono personalizado
+                  icon: HugeIcons.strokeRoundedFavourite,
                   color: Color.fromRGBO(17, 48, 73, 1),
                   size: 24.0,
                 ),
@@ -434,8 +414,7 @@ class DestinationsScreenState extends State<DestinationsScreen> {
               ),
               BottomNavigationBarItem(
                 icon: HugeIcon(
-                  icon:
-                      HugeIcons.strokeRoundedSettings01, // Icono personalizado
+                  icon: HugeIcons.strokeRoundedSettings01,
                   color: Color.fromRGBO(17, 48, 73, 1),
                   size: 24.0,
                 ),
@@ -597,7 +576,7 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                               ],
                             ),
                             Text(
-                              '\$${price.toStringAsFixed(2)}',
+                              '€${price.toStringAsFixed(2)}',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: screenWidth * 0.03,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class TermsConditionsScreen extends StatelessWidget {
   const TermsConditionsScreen({super.key});
@@ -105,6 +106,25 @@ class TermsConditionsScreen extends StatelessWidget {
             _buildSectionTitle('Contacto'),
             _buildSectionText(
               'Para cualquier consulta o aclaración sobre estos términos, puede comunicarse con nosotros a través de los canales de contacto indicados en la aplicación.',
+            ),
+            const SizedBox(height: 24),
+            Center(
+              child: GestureDetector(
+                onTap: () async {
+                  final Uri url = Uri.parse('https://privacy.biqoe.com');
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
+                },
+                child: Text(
+                  'Política de Privacidad: https://privacy.biqoe.com',
+                  style: GoogleFonts.poppins(
+                    color: Colors.blue,
+                    fontSize: 14,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
             ),
           ],
         ),
