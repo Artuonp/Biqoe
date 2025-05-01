@@ -1,15 +1,17 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'booking_provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:logger/logger.dart';
+import 'package:flutter/services.dart';
+import 'package:googleapis_auth/auth_io.dart';
+import 'booking_provider.dart';
 
 class VerifyScreen extends StatefulWidget {
-  final String userId; // Agregamos el parámetro userId
+  final String userId;
 
-  const VerifyScreen(
-      {super.key, required this.userId}); // Constructor actualizado
+  const VerifyScreen({super.key, required this.userId});
 
   @override
   State<VerifyScreen> createState() => _VerifyScreenState();
@@ -33,6 +35,12 @@ class _VerifyScreenState extends State<VerifyScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   Future<void> _verifyBooking(
       BuildContext context, String reservaId, String userId) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
@@ -40,6 +48,10 @@ class _VerifyScreenState extends State<VerifyScreen> {
       final bookingProvider =
           Provider.of<BookingProvider>(context, listen: false);
       await bookingProvider.verifyBooking(reservaId, userId);
+
+      // Enviar notificación al usuario
+      await _sendNotificationToUser(userId);
+
       scaffoldMessenger.showSnackBar(
         const SnackBar(content: Text('Reserva verificada con éxito')),
       );
@@ -47,6 +59,63 @@ class _VerifyScreenState extends State<VerifyScreen> {
       scaffoldMessenger.showSnackBar(
         SnackBar(content: Text('Error al verificar la reserva: $e')),
       );
+    }
+  }
+
+  Future<void> _sendNotificationToUser(String userId) async {
+    const String serviceAccountPath =
+        'assets/biqoe-app-firebase-adminsdk-fbsvc-067c9b5471.json';
+    const List<String> scopes = [
+      'https://www.googleapis.com/auth/firebase.messaging'
+    ];
+
+    try {
+      final serviceAccount = ServiceAccountCredentials.fromJson(
+        await rootBundle.loadString(serviceAccountPath),
+      );
+
+      final client = await clientViaServiceAccount(serviceAccount, scopes);
+
+      const String fcmUrl =
+          'https://fcm.googleapis.com/v1/projects/biqoe-app/messages:send';
+
+      final userSnapshot = await FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(userId)
+          .get();
+
+      if (userSnapshot.exists) {
+        final userData = userSnapshot.data() as Map<String, dynamic>;
+        final deviceToken = userData['deviceToken'];
+
+        if (deviceToken != null && deviceToken.isNotEmpty) {
+          final notification = {
+            'message': {
+              'token': deviceToken,
+              'notification': {
+                'title': 'Reserva Verificada',
+                'body': 'Tu reserva ha sido verificada.',
+              },
+              'data': {
+                'click_action': 'FLUTTER_NOTIFICATION_CLICK',
+                'message': 'Tu reserva ha sido verificada.',
+              },
+            },
+          };
+
+          final response = await client.post(
+            Uri.parse(fcmUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(notification),
+          );
+
+          if (response.statusCode != 200) {
+            logger.e('Error al enviar la notificación: ${response.body}');
+          }
+        }
+      }
+    } catch (e) {
+      logger.e('Error al enviar la notificación: $e');
     }
   }
 
@@ -324,11 +393,10 @@ class _VerifyScreenState extends State<VerifyScreen> {
                       return false;
                     }
 
-                    // Validar que exista el array 'packages' y que contenga al menos un paquete válido.
                     final packages = reservaData['packages'] as List<dynamic>?;
                     if (packages == null || packages.isEmpty) return false;
 
-                    bool hasValidPackage = packages.any((pkg) {
+                    return packages.any((pkg) {
                       final package = pkg as Map<String, dynamic>;
                       final fechaReserva = package['fechaReserva'];
                       final horaReserva = package['horaReserva'];
@@ -337,8 +405,6 @@ class _VerifyScreenState extends State<VerifyScreen> {
                           (fechaReserva as String).isNotEmpty &&
                           (horaReserva as String).isNotEmpty;
                     });
-
-                    return hasValidPackage;
                   }).toList();
                   final pendingReservations = filteredReservations
                       .where((doc) =>
