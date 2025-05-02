@@ -66,10 +66,12 @@ class SupplierScreen extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: Color.fromARGB(10, color.r.toInt(), color.g.toInt(),
+            color.b.toInt()), // 10% de opacidad
         borderRadius: BorderRadius.circular(15),
         border: Border.all(
-          color: color.withOpacity(0.2),
+          color: Color.fromARGB(10, color.r.toInt(), color.g.toInt(),
+              color.b.toInt()), // 10% de opacidad
         ),
       ),
       child: Column(
@@ -92,7 +94,8 @@ class SupplierScreen extends StatelessWidget {
           Text(
             'Gestiona tus reservas y más',
             style: GoogleFonts.poppins(
-              color: color.withOpacity(0.7),
+              color: Color.fromARGB(180, color.r.toInt(), color.g.toInt(),
+                  color.b.toInt()), // 10% de opacidad
             ),
           ),
         ],
@@ -119,7 +122,7 @@ class SupplierScreen extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: Colors.grey.withOpacity(0.1),
+              color: const Color.fromARGB(25, 128, 128, 128),
               width: 1,
             ),
           ),
@@ -128,7 +131,7 @@ class SupplierScreen extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: primaryColor.withOpacity(0.1),
+                  color: const Color.fromARGB(60, 17, 48, 73),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -151,7 +154,7 @@ class SupplierScreen extends StatelessWidget {
               Icon(
                 Icons.arrow_forward_ios_rounded,
                 size: 18,
-                color: primaryColor.withOpacity(0.5),
+                color: const Color.fromARGB(128, 17, 48, 73),
               ),
             ],
           ),

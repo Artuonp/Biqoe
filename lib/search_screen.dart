@@ -514,7 +514,7 @@ class SearchScreenState extends State<SearchScreen> {
         bottomNavigationBar: Container(
           height: screenHeight * 0.1,
           decoration: BoxDecoration(
-            color: const Color.fromARGB(255, 255, 255, 255).withOpacity(1),
+            color: const Color.fromARGB(255, 255, 255, 255),
             borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(30),
               topRight: Radius.circular(30),
@@ -644,7 +644,7 @@ class SearchScreenState extends State<SearchScreen> {
       padding:
           EdgeInsets.symmetric(horizontal: screenWidth * 0.05, vertical: 2),
       decoration: BoxDecoration(
-        color: const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
+        color: const Color.fromRGBO(17, 48, 73, 1),
         borderRadius: BorderRadius.circular(15),
       ),
       child: Row(
@@ -730,7 +730,7 @@ class SearchScreenState extends State<SearchScreen> {
                           child: Container(
                             padding: EdgeInsets.all(screenWidth * 0.015),
                             decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.4),
+                              color: const Color.fromARGB(128, 17, 48, 73),
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
@@ -752,7 +752,7 @@ class SearchScreenState extends State<SearchScreen> {
                           child: Container(
                             padding: EdgeInsets.all(screenWidth * 0.015),
                             decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.4),
+                              color: const Color.fromARGB(128, 17, 48, 73),
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
@@ -784,7 +784,7 @@ class SearchScreenState extends State<SearchScreen> {
                           shape: BoxShape.circle,
                           color: currentPage == index
                               ? Colors.white
-                              : Colors.white.withOpacity(0.5),
+                              : const Color.fromARGB(128, 255, 255, 255),
                         ),
                       );
                     }),
@@ -801,8 +801,7 @@ class SearchScreenState extends State<SearchScreen> {
                     width: screenWidth * 0.08,
                     height: screenWidth * 0.08,
                     decoration: BoxDecoration(
-                      color:
-                          const Color.fromRGBO(17, 48, 73, 1).withOpacity(0.5),
+                      color: const Color.fromARGB(128, 17, 48, 73),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
@@ -822,7 +821,8 @@ class SearchScreenState extends State<SearchScreen> {
                 child: Container(
                   padding: EdgeInsets.all(screenWidth * 0.05),
                   decoration: BoxDecoration(
-                    color: const Color.fromRGBO(17, 48, 73, 1).withOpacity(0.5),
+                    color: const Color.fromARGB(
+                        128, 17, 48, 73), // 102 es el valor alfa (0, 0, 0),
                     borderRadius: BorderRadius.circular(screenWidth * 0.05),
                   ),
                   child: Column(

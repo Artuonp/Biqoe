@@ -74,10 +74,8 @@ class FilterScreenState extends State<FilterScreen> {
                       }
                     });
                   },
-                  backgroundColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
-                  selectedColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
+                  backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                  selectedColor: const Color.fromRGBO(17, 48, 73, 1),
                   checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
                 ),
                 FilterChip(
@@ -94,10 +92,8 @@ class FilterScreenState extends State<FilterScreen> {
                       }
                     });
                   },
-                  backgroundColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
-                  selectedColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
+                  backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                  selectedColor: const Color.fromRGBO(17, 48, 73, 1),
                   checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
                 ),
                 FilterChip(
@@ -114,10 +110,8 @@ class FilterScreenState extends State<FilterScreen> {
                       }
                     });
                   },
-                  backgroundColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
-                  selectedColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
+                  backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                  selectedColor: const Color.fromRGBO(17, 48, 73, 1),
                   checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
                 ),
                 FilterChip(
@@ -134,10 +128,8 @@ class FilterScreenState extends State<FilterScreen> {
                       }
                     });
                   },
-                  backgroundColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
-                  selectedColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
+                  backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                  selectedColor: const Color.fromRGBO(17, 48, 73, 1),
                   checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
                 ),
                 FilterChip(
@@ -154,10 +146,8 @@ class FilterScreenState extends State<FilterScreen> {
                       }
                     });
                   },
-                  backgroundColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
-                  selectedColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
+                  backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                  selectedColor: const Color.fromRGBO(17, 48, 73, 1),
                   checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
                 ),
                 FilterChip(
@@ -174,10 +164,8 @@ class FilterScreenState extends State<FilterScreen> {
                       }
                     });
                   },
-                  backgroundColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
-                  selectedColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
+                  backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                  selectedColor: const Color.fromRGBO(17, 48, 73, 1),
                   checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
                 ),
                 FilterChip(
@@ -194,10 +182,8 @@ class FilterScreenState extends State<FilterScreen> {
                       }
                     });
                   },
-                  backgroundColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
-                  selectedColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
+                  backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                  selectedColor: const Color.fromRGBO(17, 48, 73, 1),
                   checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
                 ),
                 FilterChip(
@@ -214,10 +200,8 @@ class FilterScreenState extends State<FilterScreen> {
                       }
                     });
                   },
-                  backgroundColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
-                  selectedColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
+                  backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                  selectedColor: const Color.fromRGBO(17, 48, 73, 1),
                   checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
                 ),
                 FilterChip(
@@ -234,10 +218,8 @@ class FilterScreenState extends State<FilterScreen> {
                       }
                     });
                   },
-                  backgroundColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
-                  selectedColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
+                  backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                  selectedColor: const Color.fromRGBO(17, 48, 73, 1),
                   checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
                 ),
                 FilterChip(
@@ -254,10 +236,8 @@ class FilterScreenState extends State<FilterScreen> {
                       }
                     });
                   },
-                  backgroundColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
-                  selectedColor:
-                      const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
+                  backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                  selectedColor: const Color.fromRGBO(17, 48, 73, 1),
                   checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
                 ),
               ],
@@ -273,8 +253,7 @@ class FilterScreenState extends State<FilterScreen> {
             ),
             DropdownButton<String>(
               value: location,
-              dropdownColor:
-                  const Color.fromARGB(255, 255, 255, 255).withOpacity(1),
+              dropdownColor: const Color.fromARGB(255, 255, 255, 255),
               items: const [
                 DropdownMenuItem(
                     value: 'Todas',
@@ -412,7 +391,7 @@ class FilterScreenState extends State<FilterScreen> {
                       });
                     },
                     color: sortDescending
-                        ? const Color.fromRGBO(17, 48, 73, 1).withOpacity(1)
+                        ? const Color.fromRGBO(17, 48, 73, 1)
                         : Colors.grey,
                   ),
                 ),

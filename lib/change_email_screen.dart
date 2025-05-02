@@ -122,8 +122,7 @@ class ChangeEmailScreenState extends State<ChangeEmailScreen> {
                 child: ElevatedButton(
                   onPressed: _updateEmail,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor:
-                        const Color.fromRGBO(17, 48, 73, 1).withOpacity(0.5),
+                    backgroundColor: const Color.fromARGB(128, 17, 48, 73),
                   ),
                   child: Text(
                     'Aplicar',

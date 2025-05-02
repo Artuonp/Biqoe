@@ -136,7 +136,7 @@ class ChangeNameScreenState extends State<ChangeNameScreen> {
         borderRadius: BorderRadius.circular(15),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: const Color.fromARGB(30, 128, 128, 128),
             spreadRadius: 3,
             blurRadius: 7,
             offset: const Offset(0, 3),
@@ -176,7 +176,7 @@ class ChangeNameScreenState extends State<ChangeNameScreen> {
         borderRadius: BorderRadius.circular(15),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: const Color.fromARGB(30, 128, 128, 128),
             spreadRadius: 2,
             blurRadius: 5,
             offset: const Offset(0, 2),

@@ -120,7 +120,7 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                               shape: BoxShape.circle,
                               color: _currentPage == index
                                   ? Colors.white
-                                  : Colors.white.withOpacity(0.5),
+                                  : const Color.fromARGB(100, 255, 255, 255),
                             ),
                           );
                         }),

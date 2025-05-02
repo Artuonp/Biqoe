@@ -92,7 +92,7 @@ class AccountScreen extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(15),
             border: Border.all(
-              color: Colors.grey.withOpacity(0.2),
+              color: Colors.grey.withValues(alpha: 51),
               width: 1,
             ),
           ),
@@ -101,7 +101,7 @@ class AccountScreen extends StatelessWidget {
               Container(
                 padding: EdgeInsets.all(size.width * 0.035),
                 decoration: BoxDecoration(
-                  color: const Color.fromARGB(255, 94, 94, 94).withOpacity(0.2),
+                  color: const Color.fromARGB(30, 128, 128, 128),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(

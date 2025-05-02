@@ -351,8 +351,7 @@ class ReservationScreenState extends State<ReservationScreen> {
                     fontSize: 18, color: const Color.fromRGBO(17, 48, 73, 1)),
                 titleTextFormatter: (date, locale) {
                   final formattedDate = DateFormat.yMMMM(locale).format(date);
-                  return formattedDate[0].toUpperCase() +
-                      formattedDate.substring(1);
+                  return '${formattedDate[0].toUpperCase()}${formattedDate.substring(1)}';
                 },
                 leftChevronIcon: const Icon(Icons.chevron_left,
                     color: Color.fromRGBO(17, 48, 73, 1)),
@@ -580,9 +579,8 @@ class ReservationScreenState extends State<ReservationScreen> {
                         // Lista de paquetes
                         'numero': p.package['numero'],
                         'fecha': p.selectedDate!,
-                        'hora': p.selectedTimeInterval!['inicio'] +
-                            ' - ' +
-                            p.selectedTimeInterval!['fin'],
+                        'hora':
+                            '${p.selectedTimeInterval!['inicio']} - ${p.selectedTimeInterval!['fin']}',
                         'personas': p.numberOfPeople,
                         'miniDescripcion': p.package['miniDescripcion'] ??
                             '', // <-- Manejo de null

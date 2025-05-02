@@ -278,7 +278,7 @@ class LoginFormScreenState extends State<LoginFormScreen> {
                   child: Text(
                     'Recuperación de contraseña',
                     style: TextStyle(
-                      color: const Color.fromRGBO(17, 48, 73, 1).withOpacity(1),
+                      color: const Color.fromRGBO(17, 48, 73, 1),
                       fontFamily: 'Poppins',
                     ),
                   ),

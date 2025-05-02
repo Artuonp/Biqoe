@@ -215,7 +215,7 @@ class SavedDestinationsScreenState extends State<SavedDestinationsScreen> {
         bottomNavigationBar: Container(
           height: screenHeight * 0.1,
           decoration: BoxDecoration(
-            color: const Color.fromARGB(255, 255, 255, 255).withOpacity(1),
+            color: const Color.fromARGB(255, 255, 255, 255),
             borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(30),
               topRight: Radius.circular(30),
@@ -394,7 +394,7 @@ class SavedDestinationsScreenState extends State<SavedDestinationsScreen> {
                           shape: BoxShape.circle,
                           color: currentPage == index
                               ? Colors.white
-                              : Colors.white.withOpacity(0.5),
+                              : const Color.fromARGB(100, 255, 255, 255),
                         ),
                       );
                     }),
@@ -411,8 +411,7 @@ class SavedDestinationsScreenState extends State<SavedDestinationsScreen> {
                     width: screenWidth * 0.08,
                     height: screenWidth * 0.08,
                     decoration: BoxDecoration(
-                      color:
-                          const Color.fromRGBO(17, 48, 73, 1).withOpacity(0.5),
+                      color: const Color.fromARGB(70, 17, 48, 73),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
@@ -432,7 +431,7 @@ class SavedDestinationsScreenState extends State<SavedDestinationsScreen> {
                 child: Container(
                   padding: EdgeInsets.all(screenWidth * 0.05),
                   decoration: BoxDecoration(
-                    color: const Color.fromRGBO(17, 48, 73, 1).withOpacity(0.5),
+                    color: const Color.fromARGB(100, 17, 48, 73),
                     borderRadius: BorderRadius.circular(screenWidth * 0.05),
                   ),
                   child: Column(

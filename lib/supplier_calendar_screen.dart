@@ -213,7 +213,7 @@ class _SupplierCalendarScreenState extends State<SupplierCalendarScreen> {
           ),
           calendarStyle: CalendarStyle(
             todayDecoration: BoxDecoration(
-              color: textColor.withOpacity(0.3),
+              color: const Color.fromARGB(70, 17, 48, 73),
               shape: BoxShape.circle,
             ),
             selectedDecoration: BoxDecoration(
@@ -230,10 +230,12 @@ class _SupplierCalendarScreenState extends State<SupplierCalendarScreen> {
             holidayTextStyle: GoogleFonts.poppins(color: textColor),
           ),
           daysOfWeekStyle: DaysOfWeekStyle(
-            weekdayStyle:
-                GoogleFonts.poppins(color: textColor.withOpacity(0.7)),
-            weekendStyle:
-                GoogleFonts.poppins(color: textColor.withOpacity(0.7)),
+            weekdayStyle: GoogleFonts.poppins(
+              color: const Color.fromARGB(70, 17, 48, 73),
+            ),
+            weekendStyle: GoogleFonts.poppins(
+              color: const Color.fromARGB(70, 17, 48, 73),
+            ),
           ),
           calendarBuilders: CalendarBuilders(
             dowBuilder: (context, day) {
@@ -399,8 +401,9 @@ class _SupplierCalendarScreenState extends State<SupplierCalendarScreen> {
                     isChecked
                         ? Icons.check_circle
                         : Icons.check_circle_outlined,
-                    color:
-                        isChecked ? Colors.green : textColor.withOpacity(0.5),
+                    color: isChecked
+                        ? Colors.green
+                        : const Color.fromARGB(70, 17, 48, 73),
                     size: 28,
                   ),
                   onPressed: () => _toggleCheck(code),
