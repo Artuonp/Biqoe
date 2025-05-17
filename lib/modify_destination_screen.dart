@@ -127,81 +127,91 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
 
   Widget _buildPaqueteEditor(
       List<Map<String, dynamic>> paquetes, StateSetter setStateDialog) {
-    return ExpansionTile(
-      title: const Text('Paquetes',
-          style: TextStyle(
-              fontSize: 16,
-              fontFamily: 'Poppins',
-              color: Color.fromRGBO(17, 48, 73, 1))),
-      children: paquetes.asMap().entries.map((entry) {
-        final index = entry.key;
-        final paquete = entry.value;
+    // Usa mapas para mantener los controladores por índice
+    final Map<int, TextEditingController> descripcionControllers = {};
+    final Map<int, TextEditingController> miniDescripcionControllers = {};
 
-        final descripcionController =
-            TextEditingController(text: paquete['descripcion']);
-        final miniDescripcionController =
-            TextEditingController(text: paquete['miniDescripcion']);
-        final disponibilidades =
-            List<Map<String, dynamic>>.from(paquete['disponibilidad'] ?? []);
+    return StatefulBuilder(
+      builder: (context, localSetState) {
+        return ExpansionTile(
+          title: const Text('Paquetes',
+              style: TextStyle(
+                  fontSize: 16,
+                  fontFamily: 'Poppins',
+                  color: Color.fromRGBO(17, 48, 73, 1))),
+          children: paquetes.asMap().entries.map((entry) {
+            final index = entry.key;
+            final paquete = entry.value;
 
-        return Card(
-          margin: const EdgeInsets.symmetric(vertical: 8),
-          child: Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Paquete ${index + 1}',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'Poppins',
-                        color: Color.fromRGBO(17, 48, 73, 1))),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: descripcionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Descripción (Markdown permitido)',
-                    labelStyle: TextStyle(
-                        fontFamily: 'Poppins',
-                        color: Color.fromRGBO(17, 48, 73, 1)),
-                  ),
-                  maxLines: 5,
-                  onChanged: (value) {
-                    setStateDialog(() {
-                      paquete['descripcion'] = value;
-                    });
-                  },
+            // Solo crea el controlador si no existe
+            descripcionControllers[index] ??=
+                TextEditingController(text: paquete['descripcion']);
+            miniDescripcionControllers[index] ??=
+                TextEditingController(text: paquete['miniDescripcion']);
+
+            return Card(
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Paquete ${index + 1}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'Poppins',
+                            color: Color.fromRGBO(17, 48, 73, 1))),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: descripcionControllers[index],
+                      decoration: const InputDecoration(
+                        labelText: 'Descripción (Markdown permitido)',
+                        labelStyle: TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Color.fromRGBO(17, 48, 73, 1)),
+                      ),
+                      maxLines: 5,
+                      onChanged: (value) {
+                        paquete['descripcion'] = value;
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: miniDescripcionControllers[index],
+                      decoration: const InputDecoration(
+                        labelText: 'Mini descripción',
+                        labelStyle: TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Color.fromRGBO(17, 48, 73, 1)),
+                      ),
+                      maxLines: 3,
+                      onChanged: (value) {
+                        paquete['miniDescripcion'] = value;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _buildDisponibilidadEditor(
+                        List<Map<String, dynamic>>.from(
+                            paquete['disponibilidad'] ?? []),
+                        setStateDialog,
+                        paquete),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () => _addDisponibilidadDialog(
+                          context,
+                          List<Map<String, dynamic>>.from(
+                              paquete['disponibilidad'] ?? []),
+                          paquete,
+                          setStateDialog),
+                      child: const Text('Agregar Disponibilidad'),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: miniDescripcionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Mini descripción',
-                    labelStyle: TextStyle(
-                        fontFamily: 'Poppins',
-                        color: Color.fromRGBO(17, 48, 73, 1)),
-                  ),
-                  maxLines: 3,
-                  onChanged: (value) {
-                    setStateDialog(() {
-                      paquete['miniDescripcion'] = value;
-                    });
-                  },
-                ),
-                const SizedBox(height: 16),
-                _buildDisponibilidadEditor(
-                    disponibilidades, setStateDialog, paquete),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => _addDisponibilidadDialog(
-                      context, disponibilidades, paquete, setStateDialog),
-                  child: const Text('Agregar Disponibilidad'),
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          }).toList(),
         );
-      }).toList(),
+      },
     );
   }
 
@@ -588,12 +598,20 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
 
   Widget _buildImageEditor(
       TextEditingController controller, StateSetter setStateDialog) {
-    final images = controller.text
+    // Mantén la lista de imágenes sincronizada con el controlador
+    List<String> images = controller.text
         .split(',')
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
         .toList();
     final newImageController = TextEditingController();
+
+    void updateImages(List<String> newImages) {
+      setStateDialog(() {
+        images = newImages;
+        controller.text = images.join(', ');
+      });
+    }
 
     return ExpansionTile(
       title: const Text('Imágenes',
@@ -605,9 +623,8 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
         Column(
           children: [
             // Lista de imágenes existentes
-            ...images
-                .map((url) => _buildImageRow(url, controller, setStateDialog)),
-
+            ...images.asMap().entries.map((entry) =>
+                _buildImageRow(entry.key, entry.value, images, updateImages)),
             // Nuevo campo para agregar imágenes
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -625,12 +642,10 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
                           icon: const Icon(Icons.check_circle,
                               color: Color.fromRGBO(17, 48, 73, 1)),
                           onPressed: () {
-                            if (newImageController.text.trim().isNotEmpty) {
-                              setStateDialog(() {
-                                images.add(newImageController.text.trim());
-                                controller.text = images.join(',');
-                                newImageController.clear();
-                              });
+                            final newUrl = newImageController.text.trim();
+                            if (newUrl.isNotEmpty) {
+                              updateImages([...images, newUrl]);
+                              newImageController.clear();
                             }
                           },
                         ),
@@ -640,7 +655,6 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
                 ],
               ),
             ),
-
             // Previsualización de la nueva imagen
             if (newImageController.text.trim().isNotEmpty)
               Padding(
@@ -663,8 +677,8 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
     );
   }
 
-  Widget _buildImageRow(String url, TextEditingController mainController,
-      StateSetter setStateDialog) {
+  Widget _buildImageRow(int index, String url, List<String> images,
+      void Function(List<String>) updateImages) {
     final controller = TextEditingController(text: url);
 
     return Padding(
@@ -687,15 +701,9 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
                       onPressed: () {
                         final newUrl = controller.text.trim();
                         if (newUrl.isNotEmpty) {
-                          setStateDialog(() {
-                            final index =
-                                mainController.text.split(',').indexOf(url);
-                            if (index != -1) {
-                              final images = mainController.text.split(',');
-                              images[index] = newUrl;
-                              mainController.text = images.join(',');
-                            }
-                          });
+                          final newImages = List<String>.from(images);
+                          newImages[index] = newUrl;
+                          updateImages(newImages);
                         }
                       },
                     ),
@@ -703,11 +711,9 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
                       icon: const Icon(Icons.delete,
                           color: Color.fromRGBO(17, 48, 73, 1)),
                       onPressed: () {
-                        setStateDialog(() {
-                          final images = mainController.text.split(',');
-                          images.remove(url);
-                          mainController.text = images.join(',');
-                        });
+                        final newImages = List<String>.from(images);
+                        newImages.removeAt(index);
+                        updateImages(newImages);
                       },
                     ),
                   ],

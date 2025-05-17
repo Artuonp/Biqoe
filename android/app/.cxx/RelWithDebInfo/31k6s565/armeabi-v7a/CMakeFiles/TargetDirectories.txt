@@ -1,0 +1,2 @@
+C:/Users/artuo/Documents/Biqono/Biqoe/app/biqoe/android/app/.cxx/RelWithDebInfo/31k6s565/armeabi-v7a/CMakeFiles/edit_cache.dir
+C:/Users/artuo/Documents/Biqono/Biqoe/app/biqoe/android/app/.cxx/RelWithDebInfo/31k6s565/armeabi-v7a/CMakeFiles/rebuild_cache.dir
