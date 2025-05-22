@@ -165,7 +165,7 @@ class SearchScreenState extends State<SearchScreen> {
           destinations: const [],
           initialCategories: [category],
           initialLocation: 'Todas',
-          sortByPriceDescending: false,
+          sortOption: 0, // 0 = aleatorio, 1 = ascendente, 2 = descendente
           searchText: _searchText,
         ),
         transitionsBuilder: (_, animation, __, child) {
@@ -280,7 +280,6 @@ class SearchScreenState extends State<SearchScreen> {
                                     pageBuilder: (_, __, ___) => FilterScreen(
                                       selectedCategories: const ['Todas'],
                                       selectedLocation: 'Todas',
-                                      sortByPriceDescending: false,
                                       userId: widget.userId,
                                       destinations: widget.destinations,
                                       searchText: _searchText,

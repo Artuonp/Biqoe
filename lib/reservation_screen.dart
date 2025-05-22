@@ -305,15 +305,58 @@ class ReservationScreenState extends State<ReservationScreen> {
                       item['fecha'] == formattedDay &&
                       (item['cupos'] ?? 0) >= packageData.numberOfPeople);
 
+                  if (isAvailable && !isSelected) {
+                    // Día disponible: círculo verde y número blanco
+                    return Center(
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: const BoxDecoration(
+                          color: Colors.green,
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '${day.day}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'Poppins',
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
+                  // Día seleccionado: círculo principal
+                  if (isSelected) {
+                    return Center(
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: const BoxDecoration(
+                          color: Color.fromRGBO(17, 48, 73, 1),
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '${day.day}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'Poppins',
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
+                  // Día normal
                   return Center(
                     child: Text(
                       '${day.day}',
-                      style: TextStyle(
-                        color: isSelected
-                            ? Colors.white
-                            : isAvailable
-                                ? Colors.green
-                                : const Color.fromRGBO(17, 48, 73, 1),
+                      style: const TextStyle(
+                        color: Color.fromRGBO(17, 48, 73, 1),
                         fontWeight: FontWeight.normal,
                         fontFamily: 'Poppins',
                       ),

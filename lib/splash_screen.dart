@@ -20,7 +20,7 @@ class SplashScreenState extends State<SplashScreen> {
     super.initState();
 
     // Establece un temporizador para redirigir a la pantalla adecuada después de 3 segundos
-    Timer(const Duration(seconds: 3), () {
+    Timer(const Duration(seconds: 1), () {
       if (mounted) {
         _checkAuthentication();
       }

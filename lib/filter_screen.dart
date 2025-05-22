@@ -4,7 +4,6 @@ import 'destinations_screen.dart';
 class FilterScreen extends StatefulWidget {
   final List<String> selectedCategories;
   final String selectedLocation;
-  final bool sortByPriceDescending;
   final String userId;
   final List<String> destinations;
   final String searchText;
@@ -13,7 +12,6 @@ class FilterScreen extends StatefulWidget {
     super.key,
     required this.selectedCategories,
     required this.selectedLocation,
-    required this.sortByPriceDescending,
     required this.userId,
     required this.destinations,
     required this.searchText,
@@ -26,14 +24,14 @@ class FilterScreen extends StatefulWidget {
 class FilterScreenState extends State<FilterScreen> {
   late List<String> selectedCategories;
   late String location;
-  late bool sortDescending;
+  int sortOption = 0; // 0: Aleatorio, 1: Ascendente, 2: Descendente
 
   @override
   void initState() {
     super.initState();
     selectedCategories = List<String>.from(widget.selectedCategories);
     location = widget.selectedLocation;
-    sortDescending = widget.sortByPriceDescending;
+    sortOption = 0;
   }
 
   @override
@@ -262,8 +260,8 @@ class FilterScreenState extends State<FilterScreen> {
                             fontFamily: 'Poppins',
                             color: Color.fromRGBO(17, 48, 73, 1)))),
                 DropdownMenuItem(
-                    value: 'Distrito Capital',
-                    child: Text('Distrito Capital',
+                    value: 'Caracas',
+                    child: Text('Caracas',
                         style: TextStyle(
                             fontFamily: 'Poppins',
                             color: Color.fromRGBO(17, 48, 73, 1)))),
@@ -374,12 +372,13 @@ class FilterScreenState extends State<FilterScreen> {
                     icon: const Icon(Icons.arrow_upward),
                     onPressed: () {
                       setState(() {
-                        sortDescending = false;
+                        sortOption = 1;
                       });
                     },
-                    color: sortDescending
-                        ? Colors.grey
-                        : const Color.fromRGBO(17, 48, 73, 1),
+                    color: sortOption == 1
+                        ? const Color.fromRGBO(17, 48, 73, 1)
+                        : Colors.grey,
+                    tooltip: 'Precio ascendente',
                   ),
                 ),
                 Expanded(
@@ -387,12 +386,27 @@ class FilterScreenState extends State<FilterScreen> {
                     icon: const Icon(Icons.arrow_downward),
                     onPressed: () {
                       setState(() {
-                        sortDescending = true;
+                        sortOption = 2;
                       });
                     },
-                    color: sortDescending
+                    color: sortOption == 2
                         ? const Color.fromRGBO(17, 48, 73, 1)
                         : Colors.grey,
+                    tooltip: 'Precio descendente',
+                  ),
+                ),
+                Expanded(
+                  child: IconButton(
+                    icon: const Icon(Icons.shuffle),
+                    onPressed: () {
+                      setState(() {
+                        sortOption = 0;
+                      });
+                    },
+                    color: sortOption == 0
+                        ? const Color.fromRGBO(17, 48, 73, 1)
+                        : Colors.grey,
+                    tooltip: 'Aleatorio',
                   ),
                 ),
               ],
@@ -410,7 +424,7 @@ class FilterScreenState extends State<FilterScreen> {
                         destinations: widget.destinations,
                         initialCategories: selectedCategories,
                         initialLocation: location,
-                        sortByPriceDescending: sortDescending,
+                        sortOption: sortOption, // <-- Nuevo parámetro
                         searchText: widget.searchText,
                       ),
                     ),

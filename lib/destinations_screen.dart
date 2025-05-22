@@ -15,7 +15,7 @@ class DestinationsScreen extends StatefulWidget {
   final List<String> destinations;
   final List<String> initialCategories;
   final String initialLocation;
-  final bool sortByPriceDescending;
+  final int sortOption; // <-- Cambia aquí
   final String searchText;
 
   const DestinationsScreen({
@@ -24,7 +24,7 @@ class DestinationsScreen extends StatefulWidget {
     required this.destinations,
     required this.initialCategories,
     required this.initialLocation,
-    required this.sortByPriceDescending,
+    required this.sortOption, // <-- Cambia aquí
     required this.searchText,
   });
 
@@ -35,7 +35,7 @@ class DestinationsScreen extends StatefulWidget {
 class DestinationsScreenState extends State<DestinationsScreen> {
   late List<String> selectedCategories;
   late String selectedLocation;
-  late bool sortByPriceDescending;
+  late int sortOption; // <-- Cambia aquí
   final TextEditingController _searchController = TextEditingController();
   String _searchText = '';
   late Box<Map> savedDestinationsBox;
@@ -46,7 +46,7 @@ class DestinationsScreenState extends State<DestinationsScreen> {
     super.initState();
     selectedCategories = widget.initialCategories;
     selectedLocation = widget.initialLocation;
-    sortByPriceDescending = widget.sortByPriceDescending;
+    sortOption = widget.sortOption; // <-- Cambia aquí
     _searchText = widget.searchText;
     _searchController.text = widget.searchText;
     _searchController.addListener(() {
@@ -64,11 +64,11 @@ class DestinationsScreenState extends State<DestinationsScreen> {
   }
 
   void applyFilters(
-      List<String> categories, String location, bool sortDescending) {
+      List<String> categories, String location, int newSortOption) {
     setState(() {
       selectedCategories = categories;
       selectedLocation = location;
-      sortByPriceDescending = sortDescending;
+      sortOption = newSortOption;
     });
   }
 
@@ -195,7 +195,6 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                               builder: (context) => FilterScreen(
                                 selectedCategories: selectedCategories,
                                 selectedLocation: selectedLocation,
-                                sortByPriceDescending: sortByPriceDescending,
                                 userId: widget.userId,
                                 destinations: widget.destinations,
                                 searchText: _searchText,
@@ -209,7 +208,7 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                                   .map((e) => e.trim())
                                   .toList(),
                               filters['location'],
-                              filters['sortDescending'],
+                              filters['sortOption'],
                             );
                           }
                         },
@@ -276,7 +275,25 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                   }).toList();
 
                   // Mezclar los destinos en un orden aleatorio
-                  destinations.shuffle();
+                  if (sortOption == 0) {
+                    destinations.shuffle();
+                  } else if (sortOption == 1) {
+                    destinations.sort((a, b) {
+                      final aData = a.data() as Map<String, dynamic>;
+                      final bData = b.data() as Map<String, dynamic>;
+                      final aPrice = _getMinPrice(aData['paquetes'] ?? []);
+                      final bPrice = _getMinPrice(bData['paquetes'] ?? []);
+                      return aPrice.compareTo(bPrice);
+                    });
+                  } else if (sortOption == 2) {
+                    destinations.sort((a, b) {
+                      final aData = a.data() as Map<String, dynamic>;
+                      final bData = b.data() as Map<String, dynamic>;
+                      final aPrice = _getMinPrice(aData['paquetes'] ?? []);
+                      final bPrice = _getMinPrice(bData['paquetes'] ?? []);
+                      return bPrice.compareTo(aPrice);
+                    });
+                  }
 
                   return ListView.builder(
                     itemCount: destinations.length,
