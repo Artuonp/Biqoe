@@ -1,17 +1,14 @@
 platform :ios, '13.0'
 
-# CocoaPods analytics sends network stats. You can disable it by adding:
-# ENV['COCOAPODS_DISABLE_STATS'] = 'true'
-
 target 'Runner' do
-  # Flutter Pods
   use_frameworks!
   use_modular_headers!
 
-  # Flutter Pod
-  pod 'Flutter', :path => File.join('..', 'flutter')
+  # Ruta compatible con CodeMagic
+  pod 'Flutter', :podspec => File.join(ENV['FLUTTER_ROOT'], 'packages', 'flutter', 'ios', 'Flutter.podspec')
 
-  # Add any other pods you need here
+  # Plugins de Flutter (generados automáticamente)
+  flutter_install_ios_plugin_pods(File.dirname(File.realpath(__FILE__)))
 end
 
 post_install do |installer|
