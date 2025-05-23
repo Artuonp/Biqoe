@@ -67,5 +67,9 @@
 				</array>
 			</dict>
 		</array>
+
+		<!-- Declaración de encriptación no exenta -->
+		<key>ITSAppUsesNonExemptEncryption</key>
+		<false/>
 	</dict>
 </plist>
