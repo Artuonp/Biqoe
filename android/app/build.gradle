@@ -71,17 +71,17 @@ android {
             storePassword = keystoreProperties["storePassword"]
         }
     }
-    buildTypes {
-        release {
-            ndk {
-                debugSymbolLevel = 'FULL'
-            }
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
+   buildTypes {
+    release {
+        ndk {
+            debugSymbolLevel = 'SYMBOL_TABLE' // O 'FULL' si quieres todos los símbolos
         }
+        minifyEnabled true
+        shrinkResources true
+        proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        signingConfig signingConfigs.release
     }
+}
 }
 
 flutter {
