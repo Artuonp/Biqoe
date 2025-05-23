@@ -221,6 +221,9 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
         if (widget.paymentMethod == 'Efectivo') ...{
           'cedula': idController.text,
         },
+        if (widget.paymentMethod == 'Gratis') ...{
+          'cedula': idController.text,
+        },
       });
 
       // Obtener el token del supplier
@@ -626,7 +629,22 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
                           color: const Color.fromRGBO(17, 48, 73, 1))),
                 ),
               ],
+              if (widget.paymentMethod == 'Gratis') ...[
+                Text(
+                  'Ingresa tu cédula',
+                  style: GoogleFonts.poppins(
+                      fontSize: 16, color: const Color.fromRGBO(17, 48, 73, 1)),
+                ),
+                TextFormField(
+                  controller: idController,
+                  decoration: InputDecoration(
+                      labelText: 'Cédula',
+                      labelStyle: GoogleFonts.poppins(
+                          color: const Color.fromRGBO(17, 48, 73, 1))),
+                ),
+              ],
               if (widget.paymentMethod != 'Efectivo' &&
+                  widget.paymentMethod != 'Gratis' &&
                   widget.paymentMethod != 'Pago móvil' &&
                   widget.paymentMethod != 'Zelle' &&
                   widget.paymentMethod != 'Zinli' &&
@@ -658,6 +676,10 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
                               idController.text.isEmpty) {
                             _showErrorDialog(context,
                                 'Por favor, ingrese la cédula de la persona que pagará en efectivo.');
+                          } else if (widget.paymentMethod == 'Gratis' &&
+                              idController.text.isEmpty) {
+                            _showErrorDialog(
+                                context, 'Por favor, ingrese tu cédula.');
                           } else if (widget.paymentMethod == 'Pago móvil' &&
                               (transactionCodeController.text.isEmpty ||
                                   idController.text.isEmpty ||

@@ -468,7 +468,14 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
               DropdownButtonFormField<String>(
                 value: selectedPaymentMethod,
                 decoration: const InputDecoration(labelText: 'Método de Pago'),
-                items: ['Pago móvil', 'Zelle', 'Zinli', 'Binance', 'Efectivo']
+                items: [
+                  'Pago móvil',
+                  'Zelle',
+                  'Zinli',
+                  'Binance',
+                  'Efectivo',
+                  'Gratis'
+                ]
                     .map((method) => DropdownMenuItem<String>(
                           value: method,
                           child: Text(method),
