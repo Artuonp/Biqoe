@@ -20,7 +20,7 @@ if (localPropertiesFile.exists()) {
 
 def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
 if (flutterVersionCode == null) {
-    flutterVersionCode = '10'
+    flutterVersionCode = '11'
 }
 
 def flutterVersionName = localProperties.getProperty('flutter.versionName')
@@ -36,12 +36,15 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    compileSdk 34 // Cambié 'flutter.compileSdkVersion' por un valor fijo para asegurar compatibilidad
+    namespace 'com.biqoe.app' // <-- AGREGA ESTA LÍNEA COMO LA PRIMERA DENTRO DEL BLOQUE android
 
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
+    compileSdk 34
+
+   compileOptions {
+    sourceCompatibility JavaVersion.VERSION_1_8
+    targetCompatibility JavaVersion.VERSION_1_8
+    coreLibraryDesugaringEnabled true
+}
 
     kotlinOptions {
         jvmTarget = '1.8'
@@ -54,7 +57,7 @@ android {
     defaultConfig {
         applicationId "com.biqoe.app"
         minSdkVersion 23
-        targetSdkVersion 34 // Cambié 'flutter.targetSdkVersion' por un valor fijo
+        targetSdkVersion 34
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         multiDexEnabled true
@@ -70,9 +73,8 @@ android {
     }
     buildTypes {
         release {
-            // Configuración para habilitar símbolos de depuración
             ndk {
-                debugSymbolLevel = 'FULL' // Generar símbolos de depuración completos
+                debugSymbolLevel = 'FULL'
             }
             minifyEnabled true
             shrinkResources true
@@ -96,4 +98,5 @@ dependencies {
 
     // Google Play Services for Google Sign-In
     implementation 'com.google.android.gms:play-services-auth:20.7.0' // O la versión más reciente
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
 }
