@@ -21,8 +21,6 @@ android/.gradle/
 android/app/build/
 *.jks
 *.keystore
-key.properties
-local.properties
 gradle-wrapper.jar
 /gradlew
 /gradlew.bat
