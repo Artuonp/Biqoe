@@ -16,6 +16,7 @@ import 'package:logger/logger.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'verify_screen.dart';
 import 'supplier_verify_screen.dart';
+import 'dart:async';
 
 final List<String> destinations = [
   'Destino 1',
@@ -63,40 +64,56 @@ void _handleNotificationNavigation(RemoteMessage message) async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    ErrorScreen.show(details.exceptionAsString(), details.stack?.toString());
+  };
 
-  if (Firebase.apps.isEmpty) {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-  }
+  runZonedGuarded(() async {
+    try {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
 
-  const AndroidInitializationSettings initializationSettingsAndroid =
-      AndroidInitializationSettings('@mipmap/ic_launcher');
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        );
+      }
 
-  final InitializationSettings initializationSettings = InitializationSettings(
-    android: initializationSettingsAndroid,
-  );
+      const AndroidInitializationSettings initializationSettingsAndroid =
+          AndroidInitializationSettings('@mipmap/ic_launcher');
 
-  await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+      final InitializationSettings initializationSettings =
+          InitializationSettings(
+        android: initializationSettingsAndroid,
+      );
 
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      await flutterLocalNotificationsPlugin.initialize(initializationSettings);
 
-  await Hive.initFlutter();
-  await Hive.openBox<Map>('saved_destinations');
+      FirebaseMessaging.onBackgroundMessage(
+          _firebaseMessagingBackgroundHandler);
+      await Hive.initFlutter();
+      await Hive.openBox<Map>('saved_destinations');
 
-  setupFirebaseMessaging();
+      setupFirebaseMessaging();
 
-  FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
-    if (message != null) {
-      _handleNotificationNavigation(message);
+      FirebaseMessaging.instance
+          .getInitialMessage()
+          .then((RemoteMessage? message) {
+        if (message != null) {
+          _handleNotificationNavigation(message);
+        }
+      });
+
+      runApp(MyApp(destinations: destinations));
+    } catch (e, stack) {
+      runApp(ErrorScreen(message: e.toString(), stack: stack.toString()));
     }
+  }, (error, stack) {
+    runApp(ErrorScreen(message: error.toString(), stack: stack.toString()));
   });
-
-  runApp(MyApp(destinations: destinations));
 }
 
 void setupFirebaseMessaging() {
@@ -302,6 +319,55 @@ class AuthWrapper extends StatelessWidget {
           return const LoginScreen();
         }
       },
+    );
+  }
+}
+
+class ErrorScreen extends StatelessWidget {
+  final String message;
+  final String? stack;
+  static void show(String message, String? stack) {
+    runApp(ErrorScreen(message: message, stack: stack));
+  }
+
+  const ErrorScreen({super.key, required this.message, this.stack});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '¡Error en la app!',
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  message,
+                  style: const TextStyle(color: Colors.black, fontSize: 16),
+                ),
+                if (stack != null) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    stack!,
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

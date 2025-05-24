@@ -71,5 +71,15 @@
 		<!-- Declaración de encriptación no exenta -->
 		<key>ITSAppUsesNonExemptEncryption</key>
 		<false/>
+
+		<!-- HABILITA EL DELEGADO DE FIREBASE (OBLIGATORIO PARA PUSH Y ANALYTICS) -->
+        <key>FirebaseAppDelegateProxyEnabled</key>
+        <true/>
+
+        <!-- HABILITA NOTIFICACIONES PUSH EN SEGUNDO PLANO -->
+        <key>UIBackgroundModes</key>
+        <array>
+            <string>remote-notification</string>
+        </array>
 	</dict>
 </plist>
