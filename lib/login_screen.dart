@@ -98,10 +98,7 @@ class LoginFormScreenState extends State<LoginFormScreen> {
 
   Future<void> signInWithGoogle() async {
     try {
-      // Cerrar sesión de cualquier cuenta de Google previamente autenticada
       await GoogleSignIn().signOut();
-
-      // Mostrar el selector de cuentas de Google
       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
 
       if (googleUser == null) {
@@ -125,16 +122,13 @@ class LoginFormScreenState extends State<LoginFormScreen> {
       if (userCredential.user != null) {
         String userId = userCredential.user!.uid;
 
-        // Verificar si el usuario existe en la base de datos
         final userDoc = await FirebaseFirestore.instance
-            .collection(
-                'usuarios') // Cambia 'usuarios' por el nombre de tu colección
+            .collection('usuarios')
             .doc(userId)
             .get();
 
         if (userDoc.exists) {
-          // Si el usuario existe, permitir el acceso
-          if (!mounted) return; // Verificar si el widget sigue montado
+          if (!mounted) return;
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
               builder: (context) => SearchScreen(
@@ -144,16 +138,19 @@ class LoginFormScreenState extends State<LoginFormScreen> {
             ),
           );
         } else {
-          // Si el usuario no existe, cerrar sesión y mostrar un mensaje de error
           await _auth.signOut();
           _showErrorMessage(
               'La cuenta de Google no está registrada en la aplicación.');
         }
       }
-    } on FirebaseAuthException catch (e) {
+    } on FirebaseAuthException catch (e, stack) {
+      debugPrint('FirebaseAuthException: $e');
+      debugPrintStack(stackTrace: stack);
       _showErrorMessage(
           'Error al iniciar sesión con Google: ${e.message ?? 'Ocurrió un error inesperado.'}');
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('Error: $e');
+      debugPrintStack(stackTrace: stack);
       _showErrorMessage('Error al iniciar sesión con Google: ${e.toString()}');
     }
   }

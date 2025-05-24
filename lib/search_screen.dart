@@ -58,17 +58,21 @@ class SearchScreenState extends State<SearchScreen> {
 
     // Listener para actualizar el texto de búsqueda
     _searchController.addListener(() {
-      setState(() {
-        _searchText = _searchController.text;
-      });
+      if (mounted) {
+        setState(() {
+          _searchText = _searchController.text;
+        });
+      }
     });
 
     // Abre la caja de Hive específica para el usuario
     Hive.openBox<Map>('saved_destinations_${widget.userId}').then((box) {
-      setState(() {
-        savedDestinationsBox = box;
-        savedDestinationIds = box.keys.cast<String>().toSet();
-      });
+      if (mounted) {
+        setState(() {
+          savedDestinationsBox = box;
+          savedDestinationIds = box.keys.cast<String>().toSet();
+        });
+      }
     });
   }
 
@@ -76,15 +80,17 @@ class SearchScreenState extends State<SearchScreen> {
       String destinationId, Map<String, dynamic> destination) {
     final userBoxName = 'saved_destinations_${widget.userId}';
     Hive.openBox<Map>(userBoxName).then((userBox) {
-      setState(() {
-        if (isDestinationSaved(destinationId)) {
-          userBox.delete(destinationId);
-          savedDestinationIds.remove(destinationId);
-        } else {
-          userBox.put(destinationId, destination);
-          savedDestinationIds.add(destinationId);
-        }
-      });
+      if (mounted) {
+        setState(() {
+          if (isDestinationSaved(destinationId)) {
+            userBox.delete(destinationId);
+            savedDestinationIds.remove(destinationId);
+          } else {
+            userBox.put(destinationId, destination);
+            savedDestinationIds.add(destinationId);
+          }
+        });
+      }
     });
   }
 
