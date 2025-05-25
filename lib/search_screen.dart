@@ -48,7 +48,7 @@ class SearchScreenState extends State<SearchScreen> {
 
     // Configurar listener para actualizaciones de token
     FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
-      print('Token actualizado: $newToken');
+      debugPrint('Token actualizado: $newToken');
       _saveTokenToDatabase(newToken);
     });
 
@@ -96,15 +96,15 @@ class SearchScreenState extends State<SearchScreen> {
       );
 
       if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        print('Permiso de notificación concedido');
+        debugPrint('Permiso de notificación concedido');
         await _handleTokenRegistration();
       } else {
-        print('Permiso de notificación denegado');
+        debugPrint('Permiso de notificación denegado');
       }
     } catch (e) {
-      print('Error en permisos: $e');
+      debugPrint('Error en permisos: $e');
       if (e.toString().contains('apns-token-not-set')) {
-        print('Reintentando en 3 segundos...');
+        debugPrint('Reintentando en 3 segundos...');
         await Future.delayed(const Duration(seconds: 3));
         await requestNotificationPermission();
       }
@@ -118,18 +118,18 @@ class SearchScreenState extends State<SearchScreen> {
       // Manejo especial para iOS
       if (Platform.isIOS) {
         String? apnsToken = await _getAPNSTokenWithRetry();
-        print('APNS Token obtenido: $apnsToken');
+        debugPrint('APNS Token obtenido: $apnsToken');
       }
 
       // Obtener y guardar FCM Token
       String? fcmToken = await messaging.getToken();
-      print('FCM Token: $fcmToken');
+      debugPrint('FCM Token: $fcmToken');
 
       if (fcmToken != null) {
         await _saveTokenToDatabase(fcmToken);
       }
     } catch (e) {
-      print('Error registrando token: $e');
+      debugPrint('Error registrando token: $e');
       if (e.toString().contains('apns-token-not-set')) {
         await Future.delayed(const Duration(seconds: 2));
         await _handleTokenRegistration();
@@ -141,13 +141,13 @@ class SearchScreenState extends State<SearchScreen> {
     try {
       String? apnsToken = await FirebaseMessaging.instance.getAPNSToken();
       if (apnsToken == null) {
-        print('APNS Token no disponible, reintentando...');
+        debugPrint('APNS Token no disponible, reintentando...');
         await Future.delayed(const Duration(seconds: 2));
         return _getAPNSTokenWithRetry();
       }
       return apnsToken;
     } catch (e) {
-      print('Error obteniendo APNS Token: $e');
+      debugPrint('Error obteniendo APNS Token: $e');
       return null;
     }
   }
@@ -162,9 +162,9 @@ class SearchScreenState extends State<SearchScreen> {
         'deviceToken': token,
         'tokenActualizado': FieldValue.serverTimestamp(),
       });
-      print('Token guardado exitosamente');
+      debugPrint('Token guardado exitosamente');
     } catch (e) {
-      print('Error guardando token: $e');
+      debugPrint('Error guardando token: $e');
     }
   }
 

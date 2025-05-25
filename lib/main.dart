@@ -358,12 +358,12 @@ class AuthWrapper extends StatelessWidget {
       try {
         String? apnsToken = await FirebaseMessaging.instance.getAPNSToken();
         if (apnsToken == null) {
-          print('APNS token no disponible, reintentando...');
+          debugPrint('APNS token no disponible, reintentando...');
           await Future.delayed(const Duration(seconds: 2));
           return _handleAPNSError();
         }
       } catch (e) {
-        print('Error en APNS: $e');
+        debugPrint('Error en APNS: $e');
       }
     }
   }
