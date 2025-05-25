@@ -15,6 +15,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "685223740510-0h9cuvg3mef5gld3mstrd84a3eg31d12.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.biqoe.app",
+            "certificate_hash": "8de45dd3bdfda2ebd36c7163f23a05e84b46b2a1"
+          }
+        },
+        {
           "client_id": "685223740510-7hdfpujjao8471o5f3524mhldljc8vv8.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {

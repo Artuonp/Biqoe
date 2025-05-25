@@ -1,6 +1,6 @@
 import UIKit
 import Flutter
-import Firebase // <-- ¡Añade esta línea!
+import Firebase // <-- Agrega esta línea
 
 @UIApplicationMain
 @objc class AppDelegate: FlutterAppDelegate {
@@ -8,9 +8,8 @@ import Firebase // <-- ¡Añade esta línea!
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    FirebaseApp.configure() // <-- ¡Añade esta línea!
+    FirebaseApp.configure() // <-- Agrega esta línea
     GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 }
-

@@ -66,7 +66,7 @@ class DefaultFirebaseOptions {
     projectId: 'biqoe-app',
     databaseURL: 'https://biqoe-app-default-rtdb.firebaseio.com',
     storageBucket: 'biqoe-app.firebasestorage.app',
-    androidClientId: '685223740510-7hdfpujjao8471o5f3524mhldljc8vv8.apps.googleusercontent.com',
+    androidClientId: '685223740510-0h9cuvg3mef5gld3mstrd84a3eg31d12.apps.googleusercontent.com',
     iosClientId: '685223740510-h5q40k5rngicr0l281iafuislnucrr9i.apps.googleusercontent.com',
     iosBundleId: 'com.biqoe.app',
   );
