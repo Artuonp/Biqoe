@@ -17,6 +17,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'verify_screen.dart';
 import 'supplier_verify_screen.dart';
 import 'dart:async';
+import 'dart:io';
 
 final List<String> destinations = [
   'Destino 1',
@@ -64,6 +65,8 @@ void _handleNotificationNavigation(RemoteMessage message) async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
     ErrorScreen.show(details.exceptionAsString(), details.stack?.toString());
@@ -76,33 +79,51 @@ Future<void> main() async {
         DeviceOrientation.portraitDown,
       ]);
 
+      // Inicialización mejorada de Firebase
       if (Firebase.apps.isEmpty) {
         await Firebase.initializeApp(
           options: DefaultFirebaseOptions.currentPlatform,
         );
       }
 
+      // Configuración específica para iOS
+      if (Platform.isIOS) {
+        await FirebaseMessaging.instance.setAutoInitEnabled(true);
+        await FirebaseMessaging.instance
+            .setForegroundNotificationPresentationOptions(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+      }
+
+      // Configuración de notificaciones locales
       const AndroidInitializationSettings initializationSettingsAndroid =
           AndroidInitializationSettings('@mipmap/ic_launcher');
 
       const DarwinInitializationSettings initializationSettingsIOS =
-          DarwinInitializationSettings();
+          DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      );
 
       final InitializationSettings initializationSettings =
           InitializationSettings(
         android: initializationSettingsAndroid,
-        iOS: initializationSettingsIOS, // <-- Agrega esto
+        iOS: initializationSettingsIOS,
       );
 
       await flutterLocalNotificationsPlugin.initialize(initializationSettings);
 
-      FirebaseMessaging.onBackgroundMessage(
-          _firebaseMessagingBackgroundHandler);
+      // Configuración de Hive
       await Hive.initFlutter();
       await Hive.openBox<Map>('saved_destinations');
 
+      // Configuración de Firebase Messaging
       setupFirebaseMessaging();
 
+      // Manejo de mensajes iniciales
       FirebaseMessaging.instance
           .getInitialMessage()
           .then((RemoteMessage? message) {
@@ -132,10 +153,24 @@ void setupFirebaseMessaging() {
           AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
 
+  // Configuración para iOS
+  if (Platform.isIOS) {
+    flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin>() // Nombre correcto
+        ?.requestPermissions(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+  }
+
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
     RemoteNotification? notification = message.notification;
     AndroidNotification? android = message.notification?.android;
+    AppleNotification? ios = message.notification?.apple; // Nombre correcto
 
+    // Configuración para Android
     if (notification != null && android != null) {
       flutterLocalNotificationsPlugin.show(
         notification.hashCode,
@@ -147,11 +182,24 @@ void setupFirebaseMessaging() {
             channel.name,
             icon: android.smallIcon,
           ),
+          iOS: const DarwinNotificationDetails(), // Nombre correcto
         ),
       );
     }
 
-    // Mostrar el diálogo de notificación en cualquier pantalla
+    // Configuración para iOS
+    if (notification != null && ios != null) {
+      flutterLocalNotificationsPlugin.show(
+        notification.hashCode,
+        notification.title,
+        notification.body,
+        const NotificationDetails(
+          iOS: DarwinNotificationDetails(), // Nombre correcto
+        ),
+      );
+    }
+
+    // Mostrar diálogo de notificación
     final context = navigatorKey.currentContext;
     if (context != null && context.mounted) {
       showDialog(
@@ -177,7 +225,6 @@ void setupFirebaseMessaging() {
                 Navigator.of(dialogContext).pop();
                 await Future.delayed(const Duration(milliseconds: 100));
 
-                // Lógica para manejar la navegación según el rol
                 final user = FirebaseAuth.instance.currentUser;
                 if (user != null) {
                   final userId = user.uid;
@@ -306,6 +353,21 @@ class AuthWrapper extends StatelessWidget {
 
   const AuthWrapper({super.key, required this.destinations});
 
+  Future<void> _handleAPNSError() async {
+    if (Platform.isIOS) {
+      try {
+        String? apnsToken = await FirebaseMessaging.instance.getAPNSToken();
+        if (apnsToken == null) {
+          print('APNS token no disponible, reintentando...');
+          await Future.delayed(const Duration(seconds: 2));
+          return _handleAPNSError();
+        }
+      } catch (e) {
+        print('Error en APNS: $e');
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
@@ -314,6 +376,13 @@ class AuthWrapper extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const SplashScreen();
         } else if (snapshot.hasData) {
+          // Verificar token APNS en iOS
+          if (Platform.isIOS) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _handleAPNSError();
+            });
+          }
+
           final userId = snapshot.data?.uid ?? '';
           return SearchScreen(
             destinations: destinations,

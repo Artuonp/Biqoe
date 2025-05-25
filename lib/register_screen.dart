@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'main_screen.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'dart:io' show Platform;
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -139,6 +140,24 @@ class RegisterScreenState extends State<RegisterScreen> {
     bool notificationsAllowed = await requestNotificationPermissions();
     if (!notificationsAllowed) {
       return;
+    }
+
+    // Esperar APNS token en iOS antes de pedir el FCM token
+    if (Platform.isIOS) {
+      int retries = 0;
+      String? apnsToken;
+      do {
+        apnsToken = await FirebaseMessaging.instance.getAPNSToken();
+        if (apnsToken == null) {
+          await Future.delayed(const Duration(seconds: 2));
+        }
+        retries++;
+      } while (apnsToken == null && retries < 5);
+      if (apnsToken == null) {
+        _showErrorMessage(
+            'No se pudo obtener el token de notificaciones de Apple.');
+        return;
+      }
     }
 
     try {

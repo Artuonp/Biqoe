@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'dart:io' show Platform;
 import 'destinations_screen.dart';
 import 'filter_screen.dart';
 import 'bookings_screen.dart';
@@ -39,24 +40,22 @@ class SearchScreenState extends State<SearchScreen> {
   @override
   void initState() {
     super.initState();
+    _initNotificationsAndData();
+  }
 
-    // Otros inicializadores existentes
-    FirebaseMessaging.instance.getToken().then((token) {
-      // ignore: avoid_print
-      print('Token del dispositivo: $token');
-      // Aquí puedes guardar el token en Firestore si es necesario
-    });
+  Future<void> _initNotificationsAndData() async {
+    await requestNotificationPermission();
 
+    // Configurar listener para actualizaciones de token
     FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
-      // ignore: avoid_print
       print('Token actualizado: $newToken');
-      // Aquí puedes actualizar el token en Firestore si es necesario
+      _saveTokenToDatabase(newToken);
     });
 
-    requestNotificationPermission();
+    // Cargar datos del usuario
     fetchUserName();
 
-    // Listener para actualizar el texto de búsqueda
+    // Configurar listener para el campo de búsqueda
     _searchController.addListener(() {
       if (mounted) {
         setState(() {
@@ -65,7 +64,7 @@ class SearchScreenState extends State<SearchScreen> {
       }
     });
 
-    // Abre la caja de Hive específica para el usuario
+    // Cargar destinos guardados
     Hive.openBox<Map>('saved_destinations_${widget.userId}').then((box) {
       if (mounted) {
         setState(() {
@@ -74,6 +73,99 @@ class SearchScreenState extends State<SearchScreen> {
         });
       }
     });
+  }
+
+  Future<void> requestNotificationPermission() async {
+    try {
+      FirebaseMessaging messaging = FirebaseMessaging.instance;
+
+      // Configuración específica para iOS
+      if (Platform.isIOS) {
+        await messaging.setForegroundNotificationPresentationOptions(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+      }
+
+      // Solicitar permisos
+      NotificationSettings settings = await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+        print('Permiso de notificación concedido');
+        await _handleTokenRegistration();
+      } else {
+        print('Permiso de notificación denegado');
+      }
+    } catch (e) {
+      print('Error en permisos: $e');
+      if (e.toString().contains('apns-token-not-set')) {
+        print('Reintentando en 3 segundos...');
+        await Future.delayed(const Duration(seconds: 3));
+        await requestNotificationPermission();
+      }
+    }
+  }
+
+  Future<void> _handleTokenRegistration() async {
+    try {
+      final messaging = FirebaseMessaging.instance;
+
+      // Manejo especial para iOS
+      if (Platform.isIOS) {
+        String? apnsToken = await _getAPNSTokenWithRetry();
+        print('APNS Token obtenido: $apnsToken');
+      }
+
+      // Obtener y guardar FCM Token
+      String? fcmToken = await messaging.getToken();
+      print('FCM Token: $fcmToken');
+
+      if (fcmToken != null) {
+        await _saveTokenToDatabase(fcmToken);
+      }
+    } catch (e) {
+      print('Error registrando token: $e');
+      if (e.toString().contains('apns-token-not-set')) {
+        await Future.delayed(const Duration(seconds: 2));
+        await _handleTokenRegistration();
+      }
+    }
+  }
+
+  Future<String?> _getAPNSTokenWithRetry() async {
+    try {
+      String? apnsToken = await FirebaseMessaging.instance.getAPNSToken();
+      if (apnsToken == null) {
+        print('APNS Token no disponible, reintentando...');
+        await Future.delayed(const Duration(seconds: 2));
+        return _getAPNSTokenWithRetry();
+      }
+      return apnsToken;
+    } catch (e) {
+      print('Error obteniendo APNS Token: $e');
+      return null;
+    }
+  }
+
+  Future<void> _saveTokenToDatabase(String token) async {
+    try {
+      // Guardar el token en Firestore
+      await FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(widget.userId)
+          .update({
+        'deviceToken': token,
+        'tokenActualizado': FieldValue.serverTimestamp(),
+      });
+      print('Token guardado exitosamente');
+    } catch (e) {
+      print('Error guardando token: $e');
+    }
   }
 
   void toggleSaveDestination(
@@ -114,36 +206,6 @@ class SearchScreenState extends State<SearchScreen> {
     _searchController.dispose();
     super.dispose();
   }
-
-  // Solicita permiso para notificaciones
-  void requestNotificationPermission() async {
-    FirebaseMessaging messaging = FirebaseMessaging.instance;
-    NotificationSettings settings = await messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-
-    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      // ignore: avoid_print
-      print('Permiso de notificación concedido');
-    } else {
-      // ignore: avoid_print
-      print('Permiso de notificación denegado');
-    }
-  }
-
-  /* // Configura Firebase Messaging
-  void setupFirebaseMessaging() async {
-    try {
-      final token = await FirebaseMessaging.instance.getToken();
-      if (token != null) {
-        saveTokenToDatabase(token);
-      }
-    } catch (e) {
-      print('Error obteniendo token de FCM: $e');
-    }
-  }*/
 
   // Obtiene el nombre del usuario desde Firestore
   void fetchUserName() async {
