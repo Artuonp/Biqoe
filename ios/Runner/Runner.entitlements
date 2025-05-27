@@ -7,10 +7,11 @@
     <key>aps-environment</key>
     <string>production</string>
 
-    <!-- Permitir modo background para notificaciones remotas -->
+    <!-- Permitir modo background para notificaciones remotas 
     <key>com.apple.developer.background-modes</key>
     <array>
         <string>remote-notification</string>
     </array>
+    -->
 </dict>
 </plist>

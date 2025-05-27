@@ -76,12 +76,12 @@
         <key>FirebaseAppDelegateProxyEnabled</key>
         <true/>
 
-        <!-- HABILITA NOTIFICACIONES PUSH EN SEGUNDO PLANO -->
+        <!-- HABILITA NOTIFICACIONES PUSH EN SEGUNDO PLANO 
         <key>UIBackgroundModes</key>
         <array>
             <string>remote-notification</string>
         </array>
-
+        -->
         <!-- Descripción para el permiso de notificaciones push -->
         <key>NSPushNotificationsUsageDescription</key>
         <string>Esta app quiere enviarte notificaciones.</string>
