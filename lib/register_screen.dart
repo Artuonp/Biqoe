@@ -159,9 +159,7 @@ class RegisterScreenState extends State<RegisterScreen> {
       } while (apnsToken == null && retries < 5);
       if (apnsToken == null) {
         _showErrorMessage(
-            'No se pudo obtener el token de notificaciones de Apple.\n'
-            'Permiso de notificaciones: ${settings.authorizationStatus}\n'
-            'Token APNS: $apnsToken\n');
+            'No se pudo obtener el token de notificaciones de Apple.\n');
         return;
       }
     }
@@ -207,14 +205,27 @@ class RegisterScreenState extends State<RegisterScreen> {
 
       _showSuccessMessage(
           'Registro exitoso. Por favor, verifica tu correo electrónico.');
-    } on FirebaseAuthException catch (e, stack) {
-      // Mostrar todos los detalles del error de Firebase Authentication
+    } on FirebaseAuthException catch (e) {
+      // Manejar errores específicos de Firebase Authentication
+      if (e.code == 'email-already-in-use') {
+        _showErrorMessage('El correo ya está en uso. Intenta con otro.');
+      } else if (e.code == 'weak-password') {
+        _showErrorMessage('La contraseña es demasiado débil.');
+      } else if (e.code == 'invalid-email') {
+        _showErrorMessage('El correo electrónico no es válido.');
+      } else if (e.code == 'operation-not-allowed') {
+        _showErrorMessage(
+            'El registro con correo electrónico y contraseña no está habilitado.');
+      } else if (e.code == 'network-request-failed') {
+        _showErrorMessage(
+            'Error de red. Por favor, verifica tu conexión a internet.');
+      } else {
+        _showErrorMessage(
+            'Ocurrió un error durante el registro. Inténtalo de nuevo.');
+      }
+    } catch (e) {
       _showErrorMessage(
-          'FirebaseAuthException: ${e.code}\n${e.message ?? ''}\nStacktrace:\n${stack.toString().split('\n').take(2).join('\n')}');
-    } catch (e, stack) {
-      // Mostrar cualquier otro error y stacktrace
-      _showErrorMessage(
-          'Error: $e\nStacktrace:\n${stack.toString().split('\n').take(2).join('\n')}');
+          'Ocurrió un error inesperado. Por favor, inténtalo de nuevo.');
     }
   }
 
