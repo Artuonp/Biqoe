@@ -144,10 +144,14 @@ class RegisterScreenState extends State<RegisterScreen> {
 
     // Esperar APNS token en iOS antes de pedir el FCM token
     if (Platform.isIOS) {
+      NotificationSettings settings =
+          await FirebaseMessaging.instance.getNotificationSettings();
+      debugPrint('Permiso de notificaciones: ${settings.authorizationStatus}');
       int retries = 0;
       String? apnsToken;
       do {
         apnsToken = await FirebaseMessaging.instance.getAPNSToken();
+        debugPrint('Intento $retries, APNS token: $apnsToken');
         if (apnsToken == null) {
           await Future.delayed(const Duration(seconds: 2));
         }
@@ -155,7 +159,9 @@ class RegisterScreenState extends State<RegisterScreen> {
       } while (apnsToken == null && retries < 5);
       if (apnsToken == null) {
         _showErrorMessage(
-            'No se pudo obtener el token de notificaciones de Apple.');
+            'No se pudo obtener el token de notificaciones de Apple.\n'
+            'Permiso de notificaciones: ${settings.authorizationStatus}\n'
+            'Token APNS: $apnsToken\n');
         return;
       }
     }
@@ -201,27 +207,14 @@ class RegisterScreenState extends State<RegisterScreen> {
 
       _showSuccessMessage(
           'Registro exitoso. Por favor, verifica tu correo electrónico.');
-    } on FirebaseAuthException catch (e) {
-      // Manejar errores específicos de Firebase Authentication
-      if (e.code == 'email-already-in-use') {
-        _showErrorMessage('El correo ya está en uso. Intenta con otro.');
-      } else if (e.code == 'weak-password') {
-        _showErrorMessage('La contraseña es demasiado débil.');
-      } else if (e.code == 'invalid-email') {
-        _showErrorMessage('El correo electrónico no es válido.');
-      } else if (e.code == 'operation-not-allowed') {
-        _showErrorMessage(
-            'El registro con correo electrónico y contraseña no está habilitado.');
-      } else if (e.code == 'network-request-failed') {
-        _showErrorMessage(
-            'Error de red. Por favor, verifica tu conexión a internet.');
-      } else {
-        _showErrorMessage(
-            'Ocurrió un error durante el registro. Inténtalo de nuevo.');
-      }
-    } catch (e) {
+    } on FirebaseAuthException catch (e, stack) {
+      // Mostrar todos los detalles del error de Firebase Authentication
       _showErrorMessage(
-          'Ocurrió un error inesperado. Por favor, inténtalo de nuevo.');
+          'FirebaseAuthException: ${e.code}\n${e.message ?? ''}\nStacktrace:\n${stack.toString().split('\n').take(2).join('\n')}');
+    } catch (e, stack) {
+      // Mostrar cualquier otro error y stacktrace
+      _showErrorMessage(
+          'Error: $e\nStacktrace:\n${stack.toString().split('\n').take(2).join('\n')}');
     }
   }
 
