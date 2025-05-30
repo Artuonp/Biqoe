@@ -66,6 +66,15 @@
                     <string>com.googleusercontent.apps.685223740510-h5q40k5rngicr0l281iafuislnucrr9i</string>
                 </array>
             </dict>
+             <!-- Sign In with Apple -->
+            <dict>
+                <key>CFBundleTypeRole</key>
+                <string>Editor</string>
+                <key>CFBundleURLSchemes</key>
+                <array>
+                    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+                </array>
+            </dict>
         </array>
 
         <!-- Declaración de encriptación no exenta -->
@@ -86,8 +95,5 @@
         <key>NSPushNotificationsUsageDescription</key>
         <string>Esta app quiere enviarte notificaciones.</string>
 
-        <!-- Opcional: Descripción para el permiso de tracking (Analytics/AdMob) -->
-        <key>NSUserTrackingUsageDescription</key>
-        <string>Esta app puede usar tu identificador para mejorar la experiencia.</string>
     </dict>
 </plist>

@@ -63,16 +63,20 @@ void _handleNotificationNavigation(RemoteMessage message) async {
 }
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
-  FlutterError.onError = (FlutterErrorDetails details) {
-    FlutterError.presentError(details);
-    ErrorScreen.show(details.exceptionAsString(), details.stack?.toString());
-  };
-
   runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+    // Solo imprime los errores, no muestra pantalla de error
+    FlutterError.onError = (FlutterErrorDetails details) {
+      FlutterError.presentError(details);
+      logger.e('FlutterError: ${details.exceptionAsString()}');
+      if (details.stack != null) {
+        logger.e(details.stack.toString());
+      }
+    };
+
     try {
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
@@ -134,10 +138,14 @@ Future<void> main() async {
 
       runApp(MyApp(destinations: destinations));
     } catch (e, stack) {
-      runApp(ErrorScreen(message: e.toString(), stack: stack.toString()));
+      logger.e('Error en main: $e');
+      logger.e(stack.toString());
+      // No mostrar pantalla de error
     }
   }, (error, stack) {
-    runApp(ErrorScreen(message: error.toString(), stack: stack.toString()));
+    logger.e('Error fuera de zona: $error');
+    logger.e(stack.toString());
+    // No mostrar pantalla de error
   });
 }
 
@@ -157,7 +165,7 @@ void setupFirebaseMessaging() {
   if (Platform.isIOS) {
     flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
-            IOSFlutterLocalNotificationsPlugin>() // Nombre correcto
+            IOSFlutterLocalNotificationsPlugin>()
         ?.requestPermissions(
           alert: true,
           badge: true,
@@ -168,7 +176,7 @@ void setupFirebaseMessaging() {
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
     RemoteNotification? notification = message.notification;
     AndroidNotification? android = message.notification?.android;
-    AppleNotification? ios = message.notification?.apple; // Nombre correcto
+    AppleNotification? ios = message.notification?.apple;
 
     // Configuración para Android
     if (notification != null && android != null) {
@@ -182,7 +190,7 @@ void setupFirebaseMessaging() {
             channel.name,
             icon: android.smallIcon,
           ),
-          iOS: const DarwinNotificationDetails(), // Nombre correcto
+          iOS: const DarwinNotificationDetails(),
         ),
       );
     }
@@ -194,7 +202,7 @@ void setupFirebaseMessaging() {
         notification.title,
         notification.body,
         const NotificationDetails(
-          iOS: DarwinNotificationDetails(), // Nombre correcto
+          iOS: DarwinNotificationDetails(),
         ),
       );
     }
@@ -392,55 +400,6 @@ class AuthWrapper extends StatelessWidget {
           return const LoginScreen();
         }
       },
-    );
-  }
-}
-
-class ErrorScreen extends StatelessWidget {
-  final String message;
-  final String? stack;
-  static void show(String message, String? stack) {
-    runApp(ErrorScreen(message: message, stack: stack));
-  }
-
-  const ErrorScreen({super.key, required this.message, this.stack});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        backgroundColor: Colors.white,
-        body: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '¡Error en la app!',
-                  style: TextStyle(
-                    color: Colors.red,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  message,
-                  style: const TextStyle(color: Colors.black, fontSize: 16),
-                ),
-                if (stack != null) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    stack!,
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

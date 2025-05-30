@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'change_name_screen.dart';
 import 'change_password_screen.dart';
+import 'delete_account_screen.dart';
 
 class AccountScreen extends StatelessWidget {
   final String userId;
@@ -61,6 +62,19 @@ class AccountScreen extends StatelessWidget {
                 context,
                 MaterialPageRoute(
                   builder: (context) => const ChangePasswordScreen(),
+                ),
+              ),
+            ),
+            SizedBox(height: size.height * 0.025),
+            _buildOptionCard(
+              context: context,
+              icon: Icons.lock_outline,
+              title: 'Eliminar cuenta',
+              subtitle: 'Elimina tu cuenta de forma permanente',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const DeleteAccountScreen(),
                 ),
               ),
             ),

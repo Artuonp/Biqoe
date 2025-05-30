@@ -40,22 +40,7 @@ class SearchScreenState extends State<SearchScreen> {
   @override
   void initState() {
     super.initState();
-    _initNotificationsAndData();
-  }
 
-  Future<void> _initNotificationsAndData() async {
-    await requestNotificationPermission();
-
-    // Configurar listener para actualizaciones de token
-    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
-      debugPrint('Token actualizado: $newToken');
-      _saveTokenToDatabase(newToken);
-    });
-
-    // Cargar datos del usuario
-    fetchUserName();
-
-    // Configurar listener para el campo de búsqueda
     _searchController.addListener(() {
       if (mounted) {
         setState(() {
@@ -64,7 +49,22 @@ class SearchScreenState extends State<SearchScreen> {
       }
     });
 
-    // Cargar destinos guardados
+    _initNotificationsAndData();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initNotificationsAndData() async {
+    await requestNotificationPermission();
+    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+      debugPrint('Token actualizado: $newToken');
+      _saveTokenToDatabase(newToken);
+    });
+    fetchUserName();
     Hive.openBox<Map>('saved_destinations_${widget.userId}').then((box) {
       if (mounted) {
         setState(() {
@@ -199,12 +199,6 @@ class SearchScreenState extends State<SearchScreen> {
         .toList();
 
     return precios.isNotEmpty ? precios.reduce((a, b) => a < b ? a : b) : 0.0;
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
   }
 
   // Obtiene el nombre del usuario desde Firestore
@@ -578,126 +572,119 @@ class SearchScreenState extends State<SearchScreen> {
             ],
           ),
         ),
-        bottomNavigationBar: Container(
-          height: screenHeight * 0.1,
-          decoration: BoxDecoration(
-            color: const Color.fromARGB(255, 255, 255, 255),
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(30),
-              topRight: Radius.circular(30),
-            ),
+        bottomNavigationBar: ClipRRect(
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(30),
+            topRight: Radius.circular(30),
           ),
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: screenHeight * 0.01),
-            child: BottomNavigationBar(
-              type: BottomNavigationBarType.fixed,
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              selectedItemColor: const Color.fromRGBO(17, 48, 73, 1),
-              unselectedItemColor: const Color.fromRGBO(17, 48, 73, 1),
-              showSelectedLabels: false,
-              showUnselectedLabels: false,
-              onTap: (index) {
-                switch (index) {
-                  case 0:
-                    Navigator.pushReplacement(
-                      context,
-                      PageRouteBuilder(
-                        pageBuilder: (_, __, ___) => SearchScreen(
-                          destinations: widget.destinations,
-                          userId: widget.userId,
-                        ),
-                        transitionsBuilder: (_, a, __, c) => FadeTransition(
-                          opacity: a,
-                          child: c,
-                        ),
-                        transitionDuration: const Duration(milliseconds: 600),
+          child: BottomNavigationBar(
+            type: BottomNavigationBarType.fixed,
+            backgroundColor: Colors.white,
+            elevation: 0,
+            selectedItemColor: const Color.fromRGBO(17, 48, 73, 1),
+            unselectedItemColor: const Color.fromRGBO(17, 48, 73, 1),
+            showSelectedLabels: false,
+            showUnselectedLabels: false,
+            onTap: (index) {
+              switch (index) {
+                case 0:
+                  Navigator.pushReplacement(
+                    context,
+                    PageRouteBuilder(
+                      pageBuilder: (_, __, ___) => SearchScreen(
+                        destinations: widget.destinations,
+                        userId: widget.userId,
                       ),
-                    );
-                    break;
-                  case 1:
-                    Navigator.pushReplacement(
-                      context,
-                      PageRouteBuilder(
-                        pageBuilder: (_, __, ___) => BookingsScreen(
-                          userId: widget.userId,
-                        ),
-                        transitionsBuilder: (_, a, __, c) => FadeTransition(
-                          opacity: a,
-                          child: c,
-                        ),
-                        transitionDuration: const Duration(milliseconds: 600),
+                      transitionsBuilder: (_, a, __, c) => FadeTransition(
+                        opacity: a,
+                        child: c,
                       ),
-                    );
-                    break;
-                  case 2:
-                    Navigator.pushReplacement(
-                      context,
-                      PageRouteBuilder(
-                        pageBuilder: (_, __, ___) => SavedDestinationsScreen(
-                          userId: widget.userId,
-                        ),
-                        transitionsBuilder: (_, a, __, c) => FadeTransition(
-                          opacity: a,
-                          child: c,
-                        ),
-                        transitionDuration: const Duration(milliseconds: 600),
+                      transitionDuration: const Duration(milliseconds: 600),
+                    ),
+                  );
+                  break;
+                case 1:
+                  Navigator.pushReplacement(
+                    context,
+                    PageRouteBuilder(
+                      pageBuilder: (_, __, ___) => BookingsScreen(
+                        userId: widget.userId,
                       ),
-                    );
-                    break;
-                  case 3:
-                    Navigator.pushReplacement(
-                      context,
-                      PageRouteBuilder(
-                        pageBuilder: (_, __, ___) => SettingsScreen(
-                          userId: widget.userId,
-                          savedDestinations: savedDestinations,
-                        ),
-                        transitionsBuilder: (_, a, __, c) => FadeTransition(
-                          opacity: a,
-                          child: c,
-                        ),
-                        transitionDuration: const Duration(milliseconds: 600),
+                      transitionsBuilder: (_, a, __, c) => FadeTransition(
+                        opacity: a,
+                        child: c,
                       ),
-                    );
-                    break;
-                }
-              },
-              items: [
-                BottomNavigationBarItem(
-                  icon: HugeIcon(
-                    icon: HugeIcons.strokeRoundedHome02,
-                    color: Color.fromRGBO(240, 169, 52, 1), // Color destacado
-                    size: 24.0,
-                  ),
-                  label: 'Home',
+                      transitionDuration: const Duration(milliseconds: 600),
+                    ),
+                  );
+                  break;
+                case 2:
+                  Navigator.pushReplacement(
+                    context,
+                    PageRouteBuilder(
+                      pageBuilder: (_, __, ___) => SavedDestinationsScreen(
+                        userId: widget.userId,
+                      ),
+                      transitionsBuilder: (_, a, __, c) => FadeTransition(
+                        opacity: a,
+                        child: c,
+                      ),
+                      transitionDuration: const Duration(milliseconds: 600),
+                    ),
+                  );
+                  break;
+                case 3:
+                  Navigator.pushReplacement(
+                    context,
+                    PageRouteBuilder(
+                      pageBuilder: (_, __, ___) => SettingsScreen(
+                        userId: widget.userId,
+                        savedDestinations: savedDestinations,
+                      ),
+                      transitionsBuilder: (_, a, __, c) => FadeTransition(
+                        opacity: a,
+                        child: c,
+                      ),
+                      transitionDuration: const Duration(milliseconds: 600),
+                    ),
+                  );
+                  break;
+              }
+            },
+            items: [
+              BottomNavigationBarItem(
+                icon: HugeIcon(
+                  icon: HugeIcons.strokeRoundedHome02,
+                  color: Color.fromRGBO(240, 169, 52, 1),
+                  size: 24.0,
                 ),
-                BottomNavigationBarItem(
-                  icon: HugeIcon(
-                    icon: HugeIcons.strokeRoundedTicket03,
-                    color: Color.fromRGBO(17, 48, 73, 1),
-                    size: 24.0,
-                  ),
-                  label: 'Bookings',
+                label: 'Home',
+              ),
+              BottomNavigationBarItem(
+                icon: HugeIcon(
+                  icon: HugeIcons.strokeRoundedTicket03,
+                  color: Color.fromRGBO(17, 48, 73, 1),
+                  size: 24.0,
                 ),
-                BottomNavigationBarItem(
-                  icon: HugeIcon(
-                    icon: HugeIcons.strokeRoundedFavourite,
-                    color: Color.fromRGBO(17, 48, 73, 1),
-                    size: 24.0,
-                  ),
-                  label: 'Saved',
+                label: 'Bookings',
+              ),
+              BottomNavigationBarItem(
+                icon: HugeIcon(
+                  icon: HugeIcons.strokeRoundedFavourite,
+                  color: Color.fromRGBO(17, 48, 73, 1),
+                  size: 24.0,
                 ),
-                BottomNavigationBarItem(
-                  icon: HugeIcon(
-                    icon: HugeIcons.strokeRoundedSettings01,
-                    color: Color.fromRGBO(17, 48, 73, 1),
-                    size: 24.0,
-                  ),
-                  label: 'Settings',
+                label: 'Saved',
+              ),
+              BottomNavigationBarItem(
+                icon: HugeIcon(
+                  icon: HugeIcons.strokeRoundedSettings01,
+                  color: Color.fromRGBO(17, 48, 73, 1),
+                  size: 24.0,
                 ),
-              ],
-            ),
+                label: 'Settings',
+              ),
+            ],
           ),
         ),
       ),

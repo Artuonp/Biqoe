@@ -4,6 +4,9 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'search_screen.dart';
 import 'password_reset_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'guest_screen.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class LoginFormScreen extends StatefulWidget {
   const LoginFormScreen({super.key});
@@ -155,6 +158,71 @@ class LoginFormScreenState extends State<LoginFormScreen> {
     }
   }
 
+  // filepath:
+  Future<void> signInWithApple() async {
+    try {
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        // Necesario para Android/Web:
+        webAuthenticationOptions: WebAuthenticationOptions(
+          clientId: 'com.biqoe.app.SiwA', // Tu Service ID exacto
+          redirectUri: Uri.parse(
+            'https://biqoe-app.firebaseapp.com/__/auth/handler', // Debe coincidir con tu intent-filter
+          ),
+        ),
+      );
+
+      final oAuthProvider = OAuthProvider("apple.com");
+      final credential = oAuthProvider.credential(
+        idToken: appleCredential.identityToken,
+        accessToken: appleCredential.authorizationCode,
+      );
+
+      final userCredential = await _auth.signInWithCredential(credential);
+
+      if (!mounted) return;
+
+      if (userCredential.user != null) {
+        String userId = userCredential.user!.uid;
+
+        final userDoc = await FirebaseFirestore.instance
+            .collection('usuarios')
+            .doc(userId)
+            .get();
+
+        if (userDoc.exists) {
+          if (!mounted) return;
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => SearchScreen(
+                destinations: const [],
+                userId: userId,
+              ),
+            ),
+          );
+        } else {
+          await _auth.signOut();
+          if (!mounted) return;
+          _showErrorMessage(
+            'La cuenta de Apple no está registrada en la aplicación.',
+          );
+        }
+      }
+    } on FirebaseAuthException catch (e, stack) {
+      debugPrint('FirebaseAuthException: $e');
+      debugPrintStack(stackTrace: stack);
+      _showErrorMessage(
+          'Error al iniciar sesión con Apple: ${e.message ?? 'Ocurrió un error inesperado.'}');
+    } catch (e, stack) {
+      debugPrint('Error: $e');
+      debugPrintStack(stackTrace: stack);
+      _showErrorMessage('Error al iniciar sesión con Apple: ${e.toString()}');
+    }
+  }
+
   void _showErrorMessage(String message) {
     final snackBar = SnackBar(
       content: Text(message, style: const TextStyle(fontFamily: 'Poppins')),
@@ -259,13 +327,27 @@ class LoginFormScreenState extends State<LoginFormScreen> {
               ),
               const SizedBox(height: 16.0),
               Center(
-                child: IconButton(
-                  icon: Image.asset(
-                    'assets/images/Google logo.png',
-                    width: 24.0,
-                    height: 24.0,
-                  ),
-                  onPressed: signInWithGoogle,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: Image.asset(
+                        'assets/images/Google logo.png',
+                        width: 24.0,
+                        height: 24.0,
+                      ),
+                      onPressed: signInWithGoogle,
+                    ),
+                    const SizedBox(width: 16.0), // Espacio entre los botones
+                    IconButton(
+                      icon: SvgPicture.asset(
+                        'assets/images/Apple.svg',
+                        width: 24.0,
+                        height: 24.0,
+                      ),
+                      onPressed: signInWithApple,
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 5.0),
@@ -276,6 +358,25 @@ class LoginFormScreenState extends State<LoginFormScreen> {
                     'Recuperación de contraseña',
                     style: TextStyle(
                       color: const Color.fromRGBO(17, 48, 73, 1),
+                      fontFamily: 'Poppins',
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+              Center(
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => GuestScreen(),
+                      ),
+                    );
+                  },
+                  child: const Text(
+                    'Entrar como visitante',
+                    style: TextStyle(
+                      color: Color.fromRGBO(17, 48, 73, 1),
                       fontFamily: 'Poppins',
                     ),
                   ),

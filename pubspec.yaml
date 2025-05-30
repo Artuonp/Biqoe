@@ -2,7 +2,7 @@ name: biqoe
 description: "Something"
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.0.0+29
+version: 1.0.0+30 #Recuerda el archivo de abajo
 
 environment:
   sdk: '>=3.3.4 <4.0.0'
@@ -41,6 +41,7 @@ dependencies:
   flutter_local_notifications: ^18.0.1
   cupertino_icons: ^1.0.6
   flutter_lints: ^5.0.0
+  sign_in_with_apple: ^7.0.1
 
 dev_dependencies:
   flutter_test:
@@ -83,3 +84,4 @@ flutter:
     - assets/images/Pájaros.svg
     - assets/images/Google maps logo.png
     - assets/images/IconB22.png
+    - assets/images/Apple.svg

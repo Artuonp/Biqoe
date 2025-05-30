@@ -7,6 +7,12 @@
     <key>aps-environment</key>
     <string>production</string>
 
+     <!-- Sign In with Apple -->
+    <key>com.apple.developer.applesignin</key>
+    <array>
+        <string>Default</string>
+    </array>
+
     <!-- Permitir modo background para notificaciones remotas 
     <key>com.apple.developer.background-modes</key>
     <array>

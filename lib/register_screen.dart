@@ -5,6 +5,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'main_screen.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'dart:io' show Platform;
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -304,6 +306,78 @@ class RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  Future<void> signInWithApple() async {
+    String phone = phoneController.text.trim();
+    if (!isValidPhone(phone)) {
+      _showErrorMessage('Ingrese un número de celular válido');
+      return;
+    }
+
+    // Solicitar permisos de notificaciones
+    bool notificationsAllowed = await requestNotificationPermissions();
+    if (!notificationsAllowed) return;
+
+    try {
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        // Solo necesario en Android/Web:
+        webAuthenticationOptions: WebAuthenticationOptions(
+          clientId: 'com.biqoe.app.SiwA', // Tu Service ID exacto
+          redirectUri: Uri.parse(
+            'https://biqoe-app.firebaseapp.com/__/auth/handler', // Debe coincidir con tu intent-filter
+          ),
+        ),
+      );
+
+      final oAuthProvider = OAuthProvider("apple.com");
+      final credential = oAuthProvider.credential(
+        idToken: appleCredential.identityToken,
+        accessToken: appleCredential.authorizationCode,
+      );
+
+      // Inicia sesión en Firebase
+      final userCredential =
+          await FirebaseAuth.instance.signInWithCredential(credential);
+
+      // Verifica si el email ya está registrado
+      final email = userCredential.user?.email ?? appleCredential.email;
+      if (email == null) {
+        _showErrorMessage('No se pudo obtener el correo de Apple ID.');
+        return;
+      }
+      if (await emailYaRegistrado(email)) {
+        _showErrorMessage('Esta cuenta de Apple ya está siendo utilizada');
+        return;
+      }
+
+      // Guarda en Firestore
+      String uid = userCredential.user!.uid;
+      String? deviceToken = await FirebaseMessaging.instance.getToken();
+      await FirebaseFirestore.instance.collection('usuarios').doc(uid).set({
+        'name':
+            appleCredential.givenName ?? userCredential.user?.displayName ?? '',
+        'isAdmin': false,
+        'isSupplier': false,
+        'email': email,
+        'verified': true,
+        'celular': phone,
+        'deviceToken': deviceToken,
+      });
+
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+      _showSuccessMessage('Registro exitoso con Apple.');
+    } catch (e) {
+      _showErrorMessage(
+          'Ocurrió un error al iniciar sesión con Apple. Intenta más tarde');
+    }
+  }
+
   // Función para mostrar el mensaje de error con SnackBar
   void _showErrorMessage(String message) {
     final snackBar = SnackBar(
@@ -484,13 +558,27 @@ class RegisterScreenState extends State<RegisterScreen> {
               ),
               const SizedBox(height: 16.0),
               Center(
-                child: IconButton(
-                  icon: Image.asset(
-                    'assets/images/Google logo.png',
-                    width: 24.0,
-                    height: 24.0,
-                  ),
-                  onPressed: signInWithGoogle,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: Image.asset(
+                        'assets/images/Google logo.png',
+                        width: 24.0,
+                        height: 24.0,
+                      ),
+                      onPressed: signInWithGoogle,
+                    ),
+                    const SizedBox(width: 16.0), // Espacio entre los botones
+                    IconButton(
+                      icon: SvgPicture.asset(
+                        'assets/images/Apple.svg',
+                        width: 24.0,
+                        height: 24.0,
+                      ),
+                      onPressed: signInWithApple,
+                    ),
+                  ],
                 ),
               ),
               Center(

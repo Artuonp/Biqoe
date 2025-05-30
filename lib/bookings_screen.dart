@@ -56,7 +56,6 @@ class BookingsScreenState extends State<BookingsScreen> {
     final pendingBookings = bookingProvider.getPendingBookings(widget.userId);
     final verifiedBookings = bookingProvider.getVerifiedBookings(widget.userId);
     final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
 
     return PopScope(
       canPop: false,
@@ -81,115 +80,107 @@ class BookingsScreenState extends State<BookingsScreen> {
               ? _buildPendingPlans(pendingBookings, screenWidth)
               : _buildVerifiedPlans(verifiedBookings, screenWidth),
         ),
-        bottomNavigationBar: Container(
-          height: screenHeight * 0.1,
-          decoration: const BoxDecoration(
-            color: Color.fromARGB(255, 255, 255, 255),
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(30),
-              topRight: Radius.circular(30),
-            ),
+        bottomNavigationBar: ClipRRect(
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(30),
+            topRight: Radius.circular(30),
           ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10.0),
-            child: BottomNavigationBar(
-              type: BottomNavigationBarType.fixed,
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              selectedItemColor: const Color.fromRGBO(17, 48, 73, 1),
-              unselectedItemColor:
-                  const Color.fromRGBO(17, 48, 73, 1), // Color uniforme
-              showSelectedLabels: false,
-              showUnselectedLabels: false,
-              onTap: (index) {
-                switch (index) {
-                  case 0:
-                    Navigator.pushReplacement(
-                      context,
-                      PageRouteBuilder(
-                        pageBuilder: (_, __, ___) => SearchScreen(
-                          destinations: const [],
-                          userId: widget.userId,
-                        ),
-                        transitionsBuilder: (_, a, __, c) => FadeTransition(
-                          opacity: a,
-                          child: c,
-                        ),
-                        transitionDuration: const Duration(milliseconds: 600),
+          child: BottomNavigationBar(
+            type: BottomNavigationBarType.fixed,
+            backgroundColor: Colors.white,
+            elevation: 0,
+            selectedItemColor: const Color.fromRGBO(17, 48, 73, 1),
+            unselectedItemColor: const Color.fromRGBO(17, 48, 73, 1),
+            showSelectedLabels: false,
+            showUnselectedLabels: false,
+            onTap: (index) {
+              switch (index) {
+                case 0:
+                  Navigator.pushReplacement(
+                    context,
+                    PageRouteBuilder(
+                      pageBuilder: (_, __, ___) => SearchScreen(
+                        destinations: const [],
+                        userId: widget.userId,
                       ),
-                    );
-                    break;
-                  case 1:
-                    // Ya estamos en BookingsScreen, no necesita navegación
-                    break;
-                  case 2:
-                    Navigator.pushReplacement(
-                      context,
-                      PageRouteBuilder(
-                        pageBuilder: (_, __, ___) => SavedDestinationsScreen(
-                          userId: widget.userId,
-                        ),
-                        transitionsBuilder: (_, a, __, c) => FadeTransition(
-                          opacity: a,
-                          child: c,
-                        ),
-                        transitionDuration: const Duration(milliseconds: 600),
+                      transitionsBuilder: (_, a, __, c) => FadeTransition(
+                        opacity: a,
+                        child: c,
                       ),
-                    );
-                    break;
-                  case 3:
-                    Navigator.pushReplacement(
-                      context,
-                      PageRouteBuilder(
-                        pageBuilder: (_, __, ___) => SettingsScreen(
-                          userId: widget.userId,
-                          savedDestinations: savedDestinations,
-                        ),
-                        transitionsBuilder: (_, a, __, c) => FadeTransition(
-                          opacity: a,
-                          child: c,
-                        ),
-                        transitionDuration: const Duration(milliseconds: 600),
+                      transitionDuration: const Duration(milliseconds: 600),
+                    ),
+                  );
+                  break;
+                case 1:
+                  // Ya estamos en BookingsScreen, no necesita navegación
+                  break;
+                case 2:
+                  Navigator.pushReplacement(
+                    context,
+                    PageRouteBuilder(
+                      pageBuilder: (_, __, ___) => SavedDestinationsScreen(
+                        userId: widget.userId,
                       ),
-                    );
-                    break;
-                }
-              },
-              items: [
-                BottomNavigationBarItem(
-                  icon: HugeIcon(
-                    icon: HugeIcons.strokeRoundedHome02,
-                    color: Color.fromRGBO(17, 48, 73, 1), // Color normal
-                    size: 24.0,
-                  ),
-                  label: 'Buscar',
+                      transitionsBuilder: (_, a, __, c) => FadeTransition(
+                        opacity: a,
+                        child: c,
+                      ),
+                      transitionDuration: const Duration(milliseconds: 600),
+                    ),
+                  );
+                  break;
+                case 3:
+                  Navigator.pushReplacement(
+                    context,
+                    PageRouteBuilder(
+                      pageBuilder: (_, __, ___) => SettingsScreen(
+                        userId: widget.userId,
+                        savedDestinations: savedDestinations,
+                      ),
+                      transitionsBuilder: (_, a, __, c) => FadeTransition(
+                        opacity: a,
+                        child: c,
+                      ),
+                      transitionDuration: const Duration(milliseconds: 600),
+                    ),
+                  );
+                  break;
+              }
+            },
+            items: [
+              BottomNavigationBarItem(
+                icon: HugeIcon(
+                  icon: HugeIcons.strokeRoundedHome02,
+                  color: Color.fromRGBO(17, 48, 73, 1),
+                  size: 24.0,
                 ),
-                BottomNavigationBarItem(
-                  icon: HugeIcon(
-                    icon: HugeIcons.strokeRoundedTicket03,
-                    color: Color.fromRGBO(240, 169, 52, 1), // Color activo
-                    size: 24.0,
-                  ),
-                  label: 'Booked',
+                label: 'Buscar',
+              ),
+              BottomNavigationBarItem(
+                icon: HugeIcon(
+                  icon: HugeIcons.strokeRoundedTicket03,
+                  color: Color.fromRGBO(240, 169, 52, 1),
+                  size: 24.0,
                 ),
-                BottomNavigationBarItem(
-                  icon: HugeIcon(
-                    icon: HugeIcons.strokeRoundedFavourite,
-                    color: Color.fromRGBO(17, 48, 73, 1),
-                    size: 24.0,
-                  ),
-                  label: 'Saved',
+                label: 'Booked',
+              ),
+              BottomNavigationBarItem(
+                icon: HugeIcon(
+                  icon: HugeIcons.strokeRoundedFavourite,
+                  color: Color.fromRGBO(17, 48, 73, 1),
+                  size: 24.0,
                 ),
-                BottomNavigationBarItem(
-                  icon: HugeIcon(
-                    icon: HugeIcons.strokeRoundedSettings01,
-                    color: Color.fromRGBO(17, 48, 73, 1),
-                    size: 24.0,
-                  ),
-                  label: 'Configuración',
+                label: 'Saved',
+              ),
+              BottomNavigationBarItem(
+                icon: HugeIcon(
+                  icon: HugeIcons.strokeRoundedSettings01,
+                  color: Color.fromRGBO(17, 48, 73, 1),
+                  size: 24.0,
                 ),
-              ],
-            ),
+                label: 'Configuración',
+              ),
+            ],
           ),
         ),
       ),
