@@ -26,7 +26,13 @@ class RegisterScreenState extends State<RegisterScreen> {
 
   // Validar correo electrónico (solo Gmail, Outlook o Yahoo)
   bool isValidEmail(String email) {
-    const allowedDomains = ['gmail.com', 'outlook.com', 'yahoo.com'];
+    const allowedDomains = [
+      'gmail.com',
+      'outlook.com',
+      'yahoo.com',
+      'icloud.com',
+      'hotmail.com'
+    ];
     for (String domain in allowedDomains) {
       if (email.endsWith(domain)) return true;
     }
@@ -123,7 +129,8 @@ class RegisterScreenState extends State<RegisterScreen> {
     }
 
     if (!isValidEmail(email)) {
-      _showErrorMessage('Únicamente se acepta Gmail, Outlook o Yahoo');
+      _showErrorMessage(
+          'Únicamente se acepta Gmail, Outlook, Icloud, Hotmail o Yahoo');
       return;
     }
 
@@ -562,19 +569,19 @@ class RegisterScreenState extends State<RegisterScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     IconButton(
-                      icon: Image.asset(
-                        'assets/images/Google logo.png',
-                        width: 24.0,
-                        height: 24.0,
+                      icon: SvgPicture.asset(
+                        'assets/images/Google logo 2.svg',
+                        width: 35.0,
+                        height: 35.0,
                       ),
                       onPressed: signInWithGoogle,
                     ),
                     const SizedBox(width: 16.0), // Espacio entre los botones
                     IconButton(
-                      icon: SvgPicture.asset(
-                        'assets/images/Apple.svg',
-                        width: 24.0,
-                        height: 24.0,
+                      icon: Image.asset(
+                        'assets/images/Apple logo 2.png',
+                        width: 35.0,
+                        height: 35.0,
                       ),
                       onPressed: signInWithApple,
                     ),

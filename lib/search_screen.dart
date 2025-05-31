@@ -265,7 +265,9 @@ class SearchScreenState extends State<SearchScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Hola, $userName 👋',
+                          userName.isNotEmpty
+                              ? 'Hola, $userName 👋'
+                              : 'Hola 👋',
                           style: TextStyle(
                             fontFamily: 'Poppins',
                             fontSize: screenWidth * 0.08,

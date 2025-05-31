@@ -2,7 +2,7 @@ name: biqoe
 description: "Something"
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.0.0+30 #Recuerda el archivo de abajo
+version: 1.0.0+31 #Recuerda el archivo de abajo
 
 environment:
   sdk: '>=3.3.4 <4.0.0'
@@ -85,3 +85,7 @@ flutter:
     - assets/images/Google maps logo.png
     - assets/images/IconB22.png
     - assets/images/Apple.svg
+    - assets/images/Apple logo 1.png
+    - assets/images/Google logo 1.svg
+    - assets/images/Apple logo 2.png
+    - assets/images/Google logo 2.svg

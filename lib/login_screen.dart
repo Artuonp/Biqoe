@@ -214,12 +214,11 @@ class LoginFormScreenState extends State<LoginFormScreen> {
     } on FirebaseAuthException catch (e, stack) {
       debugPrint('FirebaseAuthException: $e');
       debugPrintStack(stackTrace: stack);
-      _showErrorMessage(
-          'Error al iniciar sesión con Apple: ${e.message ?? 'Ocurrió un error inesperado.'}');
+      _showErrorMessage('Error al iniciar sesión con Apple');
     } catch (e, stack) {
       debugPrint('Error: $e');
       debugPrintStack(stackTrace: stack);
-      _showErrorMessage('Error al iniciar sesión con Apple: ${e.toString()}');
+      _showErrorMessage('Error al iniciar sesión con Apple');
     }
   }
 
@@ -331,20 +330,20 @@ class LoginFormScreenState extends State<LoginFormScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     IconButton(
-                      icon: Image.asset(
-                        'assets/images/Google logo.png',
-                        width: 24.0,
-                        height: 24.0,
+                      icon: SvgPicture.asset(
+                        'assets/images/Google logo 2.svg',
+                        width: 35.0,
+                        height: 35.0,
                       ),
                       onPressed: signInWithGoogle,
                     ),
-                    const SizedBox(width: 16.0), // Espacio entre los botones
+                    const SizedBox(width: 16.0),
                     IconButton(
-                      icon: SvgPicture.asset(
-                        'assets/images/Apple.svg',
-                        width: 24.0,
-                        height: 24.0,
-                      ),
+                      icon: Image.asset(
+                        'assets/images/Apple logo 2.png',
+                        width: 35.0,
+                        height: 35.0,
+                      ), // Espacio entre los botones
                       onPressed: signInWithApple,
                     ),
                   ],

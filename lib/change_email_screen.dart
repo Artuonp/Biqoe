@@ -38,8 +38,8 @@ class ChangeEmailScreenState extends State<ChangeEmailScreen> {
 
   // Validar el nuevo email
   bool _validateEmail(String email) {
-    final emailPattern =
-        RegExp(r'^[a-zA-Z0-9._%+-]+@(gmail\.com|outlook\.com|yahoo\.com)$');
+    final emailPattern = RegExp(
+        r'^[a-zA-Z0-9._%+-]+@(gmail\.com|outlook\.com|yahoo\.com|icloud\.com|hotmail\.com)$');
     return emailPattern.hasMatch(email);
   }
 
@@ -51,7 +51,8 @@ class ChangeEmailScreenState extends State<ChangeEmailScreen> {
       return;
     }
     if (!_validateEmail(newEmail)) {
-      _showErrorSnackbar('El correo debe ser de Gmail, Outlook o Yahoo.');
+      _showErrorSnackbar(
+          'El correo debe ser de Gmail, Outlook, Hotmail, Icloud o Yahoo.');
       return;
     }
 
