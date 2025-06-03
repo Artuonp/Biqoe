@@ -315,9 +315,11 @@ class RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> signInWithApple() async {
     String phone = phoneController.text.trim();
-    if (!isValidPhone(phone)) {
-      _showErrorMessage('Ingrese un número de celular válido');
-      return;
+    if (!Platform.isIOS) {
+      if (!isValidPhone(phone)) {
+        _showErrorMessage('Ingrese un número de celular válido');
+        return;
+      }
     }
 
     // Solicitar permisos de notificaciones
@@ -370,7 +372,7 @@ class RegisterScreenState extends State<RegisterScreen> {
         'isSupplier': false,
         'email': email,
         'verified': true,
-        'celular': phone,
+        'celular': Platform.isIOS ? '' : phone,
         'deviceToken': deviceToken,
       });
 

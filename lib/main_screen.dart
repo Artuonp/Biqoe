@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'register_screen.dart'; // Pantalla de registro
 import 'login_screen.dart'; // Pantalla del formulario de inicio de sesión
+import 'dart:io' show Platform;
+import 'guest_screen.dart'; // Asegúrate de importar esto
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
@@ -82,6 +84,27 @@ class LoginScreen extends StatelessWidget {
                     ),
                   ),
                 ),
+
+                // Agrega este bloque debajo de "Crear cuenta"
+                if (Platform.isIOS)
+                  Center(
+                    child: TextButton(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => GuestScreen(),
+                          ),
+                        );
+                      },
+                      child: const Text(
+                        'Entrar como visitante',
+                        style: TextStyle(
+                          color: Color.fromRGBO(17, 48, 73, 1),
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                    ),
+                  ),
                 const Spacer(), // Empuja el contenido hacia el centro verticalmente
               ],
             ),

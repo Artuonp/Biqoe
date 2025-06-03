@@ -4,7 +4,6 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'search_screen.dart';
 import 'password_reset_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'guest_screen.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -359,24 +358,6 @@ class LoginFormScreenState extends State<LoginFormScreen> {
                       color: const Color.fromRGBO(17, 48, 73, 1),
                       fontFamily: 'Poppins',
                       fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-              Center(
-                child: TextButton(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => GuestScreen(),
-                      ),
-                    );
-                  },
-                  child: const Text(
-                    'Entrar como visitante',
-                    style: TextStyle(
-                      color: Color.fromRGBO(17, 48, 73, 1),
-                      fontFamily: 'Poppins',
                     ),
                   ),
                 ),
