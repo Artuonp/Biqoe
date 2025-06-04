@@ -7,6 +7,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'dart:io' show Platform;
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'search_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -251,11 +252,7 @@ class RegisterScreenState extends State<RegisterScreen> {
 
   /// 2️⃣ Método completo de registro con Google, usando el helper anterior
   Future<void> signInWithGoogle() async {
-    String phone = phoneController.text.trim();
-    if (!isValidPhone(phone)) {
-      _showErrorMessage('Ingrese un número de celular válido');
-      return;
-    }
+    // Ya no se valida ni se pide el número de celular
 
     // Solicitar permisos de notificaciones
     bool notificationsAllowed = await requestNotificationPermissions();
@@ -298,13 +295,18 @@ class RegisterScreenState extends State<RegisterScreen> {
         'isSupplier': false,
         'email': email,
         'verified': true,
-        'celular': phone,
+        'celular': '', // Siempre vacío
         'deviceToken': deviceToken,
       });
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        MaterialPageRoute(
+          builder: (_) => SearchScreen(
+            destinations: const [],
+            userId: uid,
+          ),
+        ),
       );
       _showSuccessMessage('Registro exitoso con Google.');
     } catch (e) {
@@ -314,17 +316,7 @@ class RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> signInWithApple() async {
-    String phone = phoneController.text.trim();
-    if (!Platform.isIOS) {
-      if (!isValidPhone(phone)) {
-        _showErrorMessage('Ingrese un número de celular válido');
-        return;
-      }
-    }
-
-    // Solicitar permisos de notificaciones
-    bool notificationsAllowed = await requestNotificationPermissions();
-    if (!notificationsAllowed) return;
+    // Ya no se valida ni se pide el número de celular
 
     try {
       final appleCredential = await SignInWithApple.getAppleIDCredential(
@@ -332,11 +324,10 @@ class RegisterScreenState extends State<RegisterScreen> {
           AppleIDAuthorizationScopes.email,
           AppleIDAuthorizationScopes.fullName,
         ],
-        // Solo necesario en Android/Web:
         webAuthenticationOptions: WebAuthenticationOptions(
-          clientId: 'com.biqoe.app.SiwA', // Tu Service ID exacto
+          clientId: 'com.biqoe.app.SiwA',
           redirectUri: Uri.parse(
-            'https://biqoe-app.firebaseapp.com/__/auth/handler', // Debe coincidir con tu intent-filter
+            'https://biqoe-app.firebaseapp.com/__/auth/handler',
           ),
         ),
       );
@@ -372,13 +363,18 @@ class RegisterScreenState extends State<RegisterScreen> {
         'isSupplier': false,
         'email': email,
         'verified': true,
-        'celular': Platform.isIOS ? '' : phone,
+        'celular': '', // Siempre vacío
         'deviceToken': deviceToken,
       });
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        MaterialPageRoute(
+          builder: (_) => SearchScreen(
+            destinations: const [],
+            userId: uid,
+          ),
+        ),
       );
       _showSuccessMessage('Registro exitoso con Apple.');
     } catch (e) {

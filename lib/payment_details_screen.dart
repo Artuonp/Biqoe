@@ -44,6 +44,9 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController userController = TextEditingController();
   final TextEditingController beneficiaryController = TextEditingController();
+  final TextEditingController userCedulaController = TextEditingController();
+  final TextEditingController userNumeroController = TextEditingController();
+  final TextEditingController userEmailController = TextEditingController();
 
   bool _isProcessing = false;
 
@@ -158,9 +161,17 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
           receipt: receiptController.text,
           documentId: documentId,
           code: code,
-          cedula: idController.text,
-          numero: numberController.text,
-          correo: emailController.text,
+          cedula: widget.paymentMethod == 'Pago móvil'
+              ? userCedulaController.text
+              : idController.text,
+          numero: widget.paymentMethod == 'Pago móvil'
+              ? userNumeroController.text
+              : numberController.text,
+          correo: (widget.paymentMethod == 'Zelle' ||
+                  widget.paymentMethod == 'Zinli' ||
+                  widget.paymentMethod == 'Binance')
+              ? userEmailController.text
+              : emailController.text,
           packagesData: widget.packagesData
               .map((package) => {
                     'numero': package['numero'],
@@ -202,20 +213,20 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
                 })
             .toList(),
         if (widget.paymentMethod == 'Pago móvil') ...{
-          'cedula': idController.text,
-          'numero': numberController.text,
+          'cedula': userCedulaController.text,
+          'numero': userNumeroController.text,
           'banco': bankController.text,
         },
         if (widget.paymentMethod == 'Zelle') ...{
-          'correo': emailController.text,
+          'correo': userEmailController.text,
           'beneficiario': beneficiaryController.text,
         },
         if (widget.paymentMethod == 'Zinli') ...{
-          'correo': emailController.text,
+          'correo': userEmailController.text,
           'beneficiario': beneficiaryController.text,
         },
         if (widget.paymentMethod == 'Binance') ...{
-          'correo': emailController.text,
+          'correo': userEmailController.text,
           'beneficiario': beneficiaryController.text,
         },
         if (widget.paymentMethod == 'Efectivo') ...{
@@ -381,8 +392,39 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
     );
   }
 
+  Widget infoCard({required List<Widget> children}) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color.fromARGB(255, 214, 214, 214),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+        border: Border.all(
+          color: const Color.fromRGBO(17, 48, 73, 0.08),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final String pagoMovilCedula = idController.text;
+    final String pagoMovilNumero = numberController.text;
+    final String emailproveedor = emailController.text;
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color.fromARGB(255, 243, 247, 254),
@@ -424,223 +466,523 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Método de Pago: ${widget.paymentMethod}',
+              Center(
+                child: Text(
+                  widget.paymentMethod,
                   style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: const Color.fromRGBO(17, 48, 73, 1),
+                  ),
+                ),
+              ),
+              if (widget.paymentMethod == 'Pago móvil') ...[
+                StreamBuilder<DocumentSnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('config')
+                      .doc('tasa')
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    double tasa = 67.0;
+                    if (snapshot.hasData && snapshot.data!.exists) {
+                      tasa = snapshot.data!.get('valor') ?? 67.0;
+                    }
+                    final amountInBolivares = widget.totalPrice * tasa;
+                    return infoCard(
+                      children: [
+                        Text(
+                          'Precio:',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        Text(
+                          'En euros: €${widget.totalPrice.toStringAsFixed(2)}',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        Text(
+                          'En bolívares: Bs ${amountInBolivares.toStringAsFixed(2)}',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Datos para el pago móvil:',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        Text('Banco: ${bankController.text}',
+                            style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                color: const Color.fromRGBO(17, 48, 73, 1))),
+                        Text('Documento de identificación: $pagoMovilCedula',
+                            style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                color: const Color.fromRGBO(17, 48, 73, 1))),
+                        Text('Número de celular: $pagoMovilNumero',
+                            style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                color: const Color.fromRGBO(17, 48, 73, 1))),
+                      ],
+                    );
+                  },
+                ),
+              ],
+              if (widget.paymentMethod == 'Pago móvil') ...[
+                const SizedBox(height: 20),
+                Center(
+                  child: Text(
+                    'Reporta tu pago',
+                    style: GoogleFonts.poppins(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: const Color.fromRGBO(17, 48, 73, 1))),
-              const SizedBox(height: 16),
-              StreamBuilder<DocumentSnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('config')
-                    .doc('tasa')
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  double tasa = 67.0;
-                  if (snapshot.hasData && snapshot.data!.exists) {
-                    tasa = snapshot.data!.get('valor') ?? 67.0;
-                  }
-                  final amountInBolivares =
-                      widget.totalPrice * tasa; // Usamos totalPrice
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                          'Monto en euros: €${widget.totalPrice.toStringAsFixed(2)}', // Total
-                          style: GoogleFonts.poppins(
-                              fontSize: 16,
+                      color: const Color.fromRGBO(17, 48, 73, 1),
+                    ),
+                  ),
+                ),
+                infoCard(
+                  children: [
+                    Text(
+                      'Ingresa la referencia de la transacción, la cédula y número de celular de quien realizó el pago móvil',
+                      style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          color: const Color.fromRGBO(17, 48, 73, 1)),
+                    ),
+                    TextFormField(
+                      controller: transactionCodeController,
+                      decoration: InputDecoration(
+                          labelText: 'Código de Transacción',
+                          labelStyle: GoogleFonts.poppins(
                               color: const Color.fromRGBO(17, 48, 73, 1))),
-                      Text(
-                          'Monto en bolívares: Bs ${amountInBolivares.toStringAsFixed(2)}',
-                          style: GoogleFonts.poppins(
-                              fontSize: 16,
+                    ),
+                    TextFormField(
+                      controller: userCedulaController,
+                      decoration: InputDecoration(
+                          labelText: 'Cédula',
+                          labelStyle: GoogleFonts.poppins(
                               color: const Color.fromRGBO(17, 48, 73, 1))),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-              if (widget.paymentMethod == 'Pago móvil') ...[
-                Text(
-                  'Los datos a los que tienes que hacer el pago móvil son:',
-                  style: GoogleFonts.poppins(
-                      fontSize: 16, color: const Color.fromRGBO(17, 48, 73, 1)),
-                ),
-                const SizedBox(height: 8),
-                Text('Banco: ${bankController.text}',
-                    style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        color: const Color.fromRGBO(17, 48, 73, 1))),
-                Text('Documento de identificación: ${idController.text}',
-                    style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        color: const Color.fromRGBO(17, 48, 73, 1))),
-                Text('Número de celular: ${numberController.text}',
-                    style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        color: const Color.fromRGBO(17, 48, 73, 1))),
-                const SizedBox(height: 16),
-                Text(
-                  'Ingresa la referencia de la transacción, la cédula y número de celular de quien realizó el pago móvil',
-                  style: GoogleFonts.poppins(
-                      fontSize: 16, color: const Color.fromRGBO(17, 48, 73, 1)),
-                ),
-                TextFormField(
-                  controller: transactionCodeController,
-                  decoration: InputDecoration(
-                      labelText: 'Código de Transacción',
-                      labelStyle: GoogleFonts.poppins(
-                          color: const Color.fromRGBO(17, 48, 73, 1))),
-                ),
-                TextFormField(
-                  controller: idController,
-                  decoration: InputDecoration(
-                      labelText: 'Cédula',
-                      labelStyle: GoogleFonts.poppins(
-                          color: const Color.fromRGBO(17, 48, 73, 1))),
-                ),
-                TextFormField(
-                  controller: numberController,
-                  decoration: InputDecoration(
-                      labelText: 'Número de Celular',
-                      labelStyle: GoogleFonts.poppins(
-                          color: const Color.fromRGBO(17, 48, 73, 1))),
+                    ),
+                    TextFormField(
+                      controller: userNumeroController,
+                      decoration: InputDecoration(
+                          labelText: 'Número de Celular',
+                          labelStyle: GoogleFonts.poppins(
+                              color: const Color.fromRGBO(17, 48, 73, 1))),
+                    ),
+                  ],
                 ),
               ],
               if (widget.paymentMethod == 'Zelle') ...[
-                Text(
-                  'Los datos a los que tienes que hacer la transferencia por Zelle son:',
-                  style: GoogleFonts.poppins(
-                      fontSize: 16, color: const Color.fromRGBO(17, 48, 73, 1)),
+                StreamBuilder<DocumentSnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('config')
+                      .doc('tasa')
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    double tasa = 67.0;
+                    if (snapshot.hasData && snapshot.data!.exists) {
+                      tasa = snapshot.data!.get('valor') ?? 67.0;
+                    }
+                    final amountInBolivares = widget.totalPrice * tasa;
+                    return infoCard(
+                      children: [
+                        Text(
+                          'Precio:',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        Text(
+                          'En euros: €${widget.totalPrice.toStringAsFixed(2)}',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        Text(
+                          'En bolívares: Bs ${amountInBolivares.toStringAsFixed(2)}',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Datos de Zelle:',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        Text('Correo: $emailproveedor',
+                            style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                color: const Color.fromRGBO(17, 48, 73, 1))),
+                        Text('Beneficiario: ${beneficiaryController.text}',
+                            style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                color: const Color.fromRGBO(17, 48, 73, 1))),
+                      ],
+                    );
+                  },
                 ),
-                const SizedBox(height: 8),
-                Text('Correo: ${emailController.text}',
+              ],
+              if (widget.paymentMethod == 'Zelle') ...[
+                const SizedBox(height: 20),
+                Center(
+                  child: Text(
+                    'Reporta tu pago',
                     style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        color: const Color.fromRGBO(17, 48, 73, 1))),
-                Text('Beneficiario: ${beneficiaryController.text}',
-                    style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        color: const Color.fromRGBO(17, 48, 73, 1))),
-                const SizedBox(height: 16),
-                Text(
-                  'Ingresa el nombre y el correo de quien hizo la transferencia',
-                  style: GoogleFonts.poppins(
-                      fontSize: 16, color: const Color.fromRGBO(17, 48, 73, 1)),
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: const Color.fromRGBO(17, 48, 73, 1),
+                    ),
+                  ),
                 ),
-                TextFormField(
-                  controller: userController,
-                  decoration: InputDecoration(
-                      labelText: 'Nombre',
-                      labelStyle: GoogleFonts.poppins(
-                          color: const Color.fromRGBO(17, 48, 73, 1))),
-                ),
-                TextFormField(
-                  controller: emailController,
-                  decoration: InputDecoration(
-                      labelText: 'Correo',
-                      labelStyle: GoogleFonts.poppins(
-                          color: const Color.fromRGBO(17, 48, 73, 1))),
+                infoCard(
+                  children: [
+                    Text(
+                      'Ingresa el nombre y correo de quien realizó la transferencia',
+                      style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          color: const Color.fromRGBO(17, 48, 73, 1)),
+                    ),
+                    TextFormField(
+                      controller: userController,
+                      decoration: InputDecoration(
+                          labelText: 'Nombre',
+                          labelStyle: GoogleFonts.poppins(
+                              color: const Color.fromRGBO(17, 48, 73, 1))),
+                    ),
+                    TextFormField(
+                      controller: userEmailController,
+                      decoration: InputDecoration(
+                          labelText: 'Correo',
+                          labelStyle: GoogleFonts.poppins(
+                              color: const Color.fromRGBO(17, 48, 73, 1))),
+                    ),
+                  ],
                 ),
               ],
               if (widget.paymentMethod == 'Zinli') ...[
-                Text(
-                  'Los datos a los que tienes que hacer la transferencia por Zinli son:',
-                  style: GoogleFonts.poppins(
-                      fontSize: 16, color: const Color.fromRGBO(17, 48, 73, 1)),
+                StreamBuilder<DocumentSnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('config')
+                      .doc('tasa')
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    double tasa = 67.0;
+                    if (snapshot.hasData && snapshot.data!.exists) {
+                      tasa = snapshot.data!.get('valor') ?? 67.0;
+                    }
+                    final amountInBolivares = widget.totalPrice * tasa;
+                    return infoCard(
+                      children: [
+                        Text(
+                          'Precio:',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        Text(
+                          'En euros: €${widget.totalPrice.toStringAsFixed(2)}',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        Text(
+                          'En bolívares: Bs ${amountInBolivares.toStringAsFixed(2)}',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Datos de Zinli:',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        Text('Correo: $emailproveedor',
+                            style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                color: const Color.fromRGBO(17, 48, 73, 1))),
+                        Text('Beneficiario: ${beneficiaryController.text}',
+                            style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                color: const Color.fromRGBO(17, 48, 73, 1))),
+                      ],
+                    );
+                  },
                 ),
-                const SizedBox(height: 8),
-                Text('Correo: ${emailController.text}',
+              ],
+              if (widget.paymentMethod == 'Zinli') ...[
+                const SizedBox(height: 20),
+                Center(
+                  child: Text(
+                    'Reporta tu pago',
                     style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        color: const Color.fromRGBO(17, 48, 73, 1))),
-                Text('Beneficiario: ${beneficiaryController.text}',
-                    style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        color: const Color.fromRGBO(17, 48, 73, 1))),
-                const SizedBox(height: 16),
-                Text(
-                  'Ingresa el nombre y el correo de quien hizo la transferencia',
-                  style: GoogleFonts.poppins(
-                      fontSize: 16, color: const Color.fromRGBO(17, 48, 73, 1)),
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: const Color.fromRGBO(17, 48, 73, 1),
+                    ),
+                  ),
                 ),
-                TextFormField(
-                  controller: userController,
-                  decoration: InputDecoration(
-                      labelText: 'Nombre',
-                      labelStyle: GoogleFonts.poppins(
-                          color: const Color.fromRGBO(17, 48, 73, 1))),
-                ),
-                TextFormField(
-                  controller: emailController,
-                  decoration: InputDecoration(
-                      labelText: 'Correo',
-                      labelStyle: GoogleFonts.poppins(
-                          color: const Color.fromRGBO(17, 48, 73, 1))),
+                infoCard(
+                  children: [
+                    Text(
+                      'Ingresa el nombre y correo de quien realizó la transferencia',
+                      style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          color: const Color.fromRGBO(17, 48, 73, 1)),
+                    ),
+                    TextFormField(
+                      controller: userController,
+                      decoration: InputDecoration(
+                          labelText: 'Nombre',
+                          labelStyle: GoogleFonts.poppins(
+                              color: const Color.fromRGBO(17, 48, 73, 1))),
+                    ),
+                    TextFormField(
+                      controller: userEmailController,
+                      decoration: InputDecoration(
+                          labelText: 'Correo',
+                          labelStyle: GoogleFonts.poppins(
+                              color: const Color.fromRGBO(17, 48, 73, 1))),
+                    ),
+                  ],
                 ),
               ],
               if (widget.paymentMethod == 'Binance') ...[
-                Text(
-                  'Los datos a los que tienes que hacer la transferencia por Binance son:',
-                  style: GoogleFonts.poppins(
-                      fontSize: 16, color: const Color.fromRGBO(17, 48, 73, 1)),
+                StreamBuilder<DocumentSnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('config')
+                      .doc('tasa')
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    double tasa = 67.0;
+                    if (snapshot.hasData && snapshot.data!.exists) {
+                      tasa = snapshot.data!.get('valor') ?? 67.0;
+                    }
+                    final amountInBolivares = widget.totalPrice * tasa;
+                    return infoCard(
+                      children: [
+                        Text(
+                          'Precio:',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        Text(
+                          'En euros: €${widget.totalPrice.toStringAsFixed(2)}',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        Text(
+                          'En bolívares: Bs ${amountInBolivares.toStringAsFixed(2)}',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Datos de Binance:',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        Text('Correo: $emailproveedor',
+                            style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                color: const Color.fromRGBO(17, 48, 73, 1))),
+                        Text('Beneficiario: ${beneficiaryController.text}',
+                            style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                color: const Color.fromRGBO(17, 48, 73, 1))),
+                      ],
+                    );
+                  },
                 ),
-                const SizedBox(height: 8),
-                Text('Correo: ${emailController.text}',
+              ],
+              if (widget.paymentMethod == 'Binance') ...[
+                const SizedBox(height: 20),
+                Center(
+                  child: Text(
+                    'Reporta tu pago',
                     style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        color: const Color.fromRGBO(17, 48, 73, 1))),
-                Text('Beneficiario: ${beneficiaryController.text}',
-                    style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        color: const Color.fromRGBO(17, 48, 73, 1))),
-                const SizedBox(height: 16),
-                Text(
-                  'Ingresa el nombre y el correo de quien hizo la transferencia',
-                  style: GoogleFonts.poppins(
-                      fontSize: 16, color: const Color.fromRGBO(17, 48, 73, 1)),
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: const Color.fromRGBO(17, 48, 73, 1),
+                    ),
+                  ),
                 ),
-                TextFormField(
-                  controller: userController,
-                  decoration: InputDecoration(
-                      labelText: 'Nombre',
-                      labelStyle: GoogleFonts.poppins(
-                          color: const Color.fromRGBO(17, 48, 73, 1))),
-                ),
-                TextFormField(
-                  controller: emailController,
-                  decoration: InputDecoration(
-                      labelText: 'Correo',
-                      labelStyle: GoogleFonts.poppins(
-                          color: const Color.fromRGBO(17, 48, 73, 1))),
+                infoCard(
+                  children: [
+                    Text(
+                      'Ingresa el nombre y correo de quien realizó la transferencia',
+                      style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          color: const Color.fromRGBO(17, 48, 73, 1)),
+                    ),
+                    TextFormField(
+                      controller: userController,
+                      decoration: InputDecoration(
+                          labelText: 'Nombre',
+                          labelStyle: GoogleFonts.poppins(
+                              color: const Color.fromRGBO(17, 48, 73, 1))),
+                    ),
+                    TextFormField(
+                      controller: userEmailController,
+                      decoration: InputDecoration(
+                          labelText: 'Correo',
+                          labelStyle: GoogleFonts.poppins(
+                              color: const Color.fromRGBO(17, 48, 73, 1))),
+                    ),
+                  ],
                 ),
               ],
               if (widget.paymentMethod == 'Efectivo') ...[
-                Text(
-                  'Ingresa la cédula de la persona que pagará en efectivo y completa la reserva',
-                  style: GoogleFonts.poppins(
-                      fontSize: 16, color: const Color.fromRGBO(17, 48, 73, 1)),
+                StreamBuilder<DocumentSnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('config')
+                      .doc('tasa')
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    double tasa = 67.0;
+                    if (snapshot.hasData && snapshot.data!.exists) {
+                      tasa = snapshot.data!.get('valor') ?? 67.0;
+                    }
+                    final amountInBolivares = widget.totalPrice * tasa;
+                    return infoCard(
+                      children: [
+                        Text(
+                          'Precio:',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        Text(
+                          'En euros: €${widget.totalPrice.toStringAsFixed(2)}',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        Text(
+                          'En bolívares: Bs ${amountInBolivares.toStringAsFixed(2)}',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    );
+                  },
                 ),
-                TextFormField(
-                  controller: idController,
-                  decoration: InputDecoration(
-                      labelText: 'Cédula',
-                      labelStyle: GoogleFonts.poppins(
-                          color: const Color.fromRGBO(17, 48, 73, 1))),
+                const SizedBox(height: 20),
+                Center(
+                  child: Text(
+                    'Identifícate',
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: const Color.fromRGBO(17, 48, 73, 1),
+                    ),
+                  ),
+                ),
+                infoCard(
+                  children: [
+                    Text(
+                      'Ingresa la cédula de la persona que pagará en efectivo y completa la reserva',
+                      style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          color: const Color.fromRGBO(17, 48, 73, 1)),
+                    ),
+                    TextFormField(
+                      controller: idController,
+                      decoration: InputDecoration(
+                          labelText: 'Cédula',
+                          labelStyle: GoogleFonts.poppins(
+                              color: const Color.fromRGBO(17, 48, 73, 1))),
+                    ),
+                  ],
                 ),
               ],
               if (widget.paymentMethod == 'Gratis') ...[
-                Text(
-                  'Ingresa tu cédula',
-                  style: GoogleFonts.poppins(
-                      fontSize: 16, color: const Color.fromRGBO(17, 48, 73, 1)),
+                StreamBuilder<DocumentSnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('config')
+                      .doc('tasa')
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    double tasa = 67.0;
+                    if (snapshot.hasData && snapshot.data!.exists) {
+                      tasa = snapshot.data!.get('valor') ?? 67.0;
+                    }
+                    final amountInBolivares = widget.totalPrice * tasa;
+                    return infoCard(
+                      children: [
+                        Text(
+                          'Precio:',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        Text(
+                          'En euros: €${widget.totalPrice.toStringAsFixed(2)}',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        Text(
+                          'En bolívares: Bs ${amountInBolivares.toStringAsFixed(2)}',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              color: const Color.fromRGBO(17, 48, 73, 1)),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    );
+                  },
                 ),
-                TextFormField(
-                  controller: idController,
-                  decoration: InputDecoration(
-                      labelText: 'Cédula',
-                      labelStyle: GoogleFonts.poppins(
-                          color: const Color.fromRGBO(17, 48, 73, 1))),
+                const SizedBox(height: 20),
+                Center(
+                  child: Text(
+                    'Identifícate',
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: const Color.fromRGBO(17, 48, 73, 1),
+                    ),
+                  ),
+                ),
+                infoCard(
+                  children: [
+                    Text(
+                      'Ingresa tu cédula y completa la reserva',
+                      style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          color: const Color.fromRGBO(17, 48, 73, 1)),
+                    ),
+                    TextFormField(
+                      controller: idController,
+                      decoration: InputDecoration(
+                          labelText: 'Cédula',
+                          labelStyle: GoogleFonts.poppins(
+                              color: const Color.fromRGBO(17, 48, 73, 1))),
+                    ),
+                  ],
                 ),
               ],
               if (widget.paymentMethod != 'Efectivo' &&
@@ -670,39 +1012,72 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
               Center(
                 child: ElevatedButton(
                   onPressed: _isProcessing
-                      ? null // Deshabilitar el botón si está procesando
-                      : () {
+                      ? null
+                      : () async {
+                          // 1. Verifica si el usuario tiene celular en Firestore
+                          final userDoc = await FirebaseFirestore.instance
+                              .collection('usuarios')
+                              .doc(widget.userId)
+                              .get();
+
+                          String? celular = userDoc.data()?['celular'];
+                          if (celular == null || celular.trim().isEmpty) {
+                            final phone = await _showPhoneDialog();
+                            if (phone == null) return; // Cancelado
+
+                            // Guarda el número en Firestore
+                            await FirebaseFirestore.instance
+                                .collection('usuarios')
+                                .doc(widget.userId)
+                                .update({'celular': phone});
+                          }
+
+                          // Validaciones originales
                           if (widget.paymentMethod == 'Efectivo' &&
                               idController.text.isEmpty) {
-                            _showErrorDialog(context,
-                                'Por favor, ingrese la cédula de la persona que pagará en efectivo.');
+                            if (mounted) {
+                              _showErrorDialog(this.context,
+                                  'Por favor, ingrese la cédula de la persona que pagará en efectivo.');
+                            }
                           } else if (widget.paymentMethod == 'Gratis' &&
                               idController.text.isEmpty) {
-                            _showErrorDialog(
-                                context, 'Por favor, ingrese tu cédula.');
+                            if (mounted) {
+                              _showErrorDialog(this.context,
+                                  'Por favor, ingrese tu cédula.');
+                            }
                           } else if (widget.paymentMethod == 'Pago móvil' &&
                               (transactionCodeController.text.isEmpty ||
                                   idController.text.isEmpty ||
                                   numberController.text.isEmpty)) {
-                            _showErrorDialog(context,
-                                'Por favor, ingrese la referencia de la transacción, la cédula y el número de celular de quien realizó el pago móvil.');
+                            if (mounted) {
+                              _showErrorDialog(this.context,
+                                  'Por favor, ingrese la referencia de la transacción, la cédula y el número de celular de quien realizó el pago móvil.');
+                            }
                           } else if (widget.paymentMethod == 'Zelle' &&
                               (userController.text.isEmpty ||
                                   emailController.text.isEmpty)) {
-                            _showErrorDialog(context,
-                                'Por favor, ingrese el nombre y el correo de quien hizo la transferencia.');
+                            if (mounted) {
+                              _showErrorDialog(this.context,
+                                  'Por favor, ingrese el nombre y el correo de quien hizo la transferencia.');
+                            }
                           } else if (widget.paymentMethod == 'Zinli' &&
                               (userController.text.isEmpty ||
                                   emailController.text.isEmpty)) {
-                            _showErrorDialog(context,
-                                'Por favor, ingrese el nombre y el correo de quien hizo la transferencia.');
+                            if (mounted) {
+                              _showErrorDialog(this.context,
+                                  'Por favor, ingrese el nombre y el correo de quien hizo la transferencia.');
+                            }
                           } else if (widget.paymentMethod == 'Binance' &&
                               (userController.text.isEmpty ||
                                   emailController.text.isEmpty)) {
-                            _showErrorDialog(context,
-                                'Por favor, ingrese el nombre y el correo de quien hizo la transferencia.');
+                            if (mounted) {
+                              _showErrorDialog(this.context,
+                                  'Por favor, ingrese el nombre y el correo de quien hizo la transferencia.');
+                            }
                           } else {
-                            _completeReservation(context);
+                            if (mounted) {
+                              _completeReservation(this.context);
+                            }
                           }
                         },
                   style: ElevatedButton.styleFrom(
@@ -710,11 +1085,11 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
                   ),
                   child: _isProcessing
                       ? const SizedBox(
-                          width: 20, // Ancho del indicador
-                          height: 20, // Alto del indicador
+                          width: 20,
+                          height: 20,
                           child: CircularProgressIndicator(
                             color: Colors.white,
-                            strokeWidth: 2.0, // Grosor del indicador
+                            strokeWidth: 2.0,
                           ),
                         )
                       : Text(
@@ -730,6 +1105,88 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
         ),
       ),
       backgroundColor: const Color.fromARGB(255, 243, 247, 254),
+    );
+  }
+  // ...existing code...
+
+  bool isValidPhone(String phone) {
+    return RegExp(r'^\d{10,15}$').hasMatch(phone);
+  }
+
+  Future<String?> _showPhoneDialog() async {
+    final controller = TextEditingController();
+    String? errorText;
+
+    return await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) => AlertDialog(
+            backgroundColor: Colors.white,
+            title: const Center(
+              child: Text(
+                'Ingresa tu número de celular',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  fontWeight: FontWeight.bold,
+                  color: Color.fromRGBO(17, 48, 73, 1),
+                ),
+              ),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Este número será el que usará el proveedor para contactarte después que reserves, asegúrate de que sea un número real',
+                  style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Color.fromRGBO(17, 48, 73, 1)),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  keyboardType: TextInputType.phone,
+                  decoration: InputDecoration(
+                    hintText: 'Número de celular',
+                    hintStyle: const TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Color.fromRGBO(17, 48, 73, 1)),
+                    errorText: errorText,
+                  ),
+                ),
+              ],
+            ),
+            actionsAlignment: MainAxisAlignment.center,
+            actions: [
+              TextButton(
+                child: const Text('Cancelar',
+                    style: TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Color.fromRGBO(17, 48, 73, 1))),
+                onPressed: () => Navigator.of(context).pop(null),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                ),
+                child: const Text('Aceptar',
+                    style:
+                        TextStyle(fontFamily: 'Poppins', color: Colors.white)),
+                onPressed: () {
+                  final phone = controller.text.trim();
+                  if (!isValidPhone(phone)) {
+                    setState(() => errorText = 'Número inválido');
+                  } else {
+                    Navigator.of(context).pop(phone);
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

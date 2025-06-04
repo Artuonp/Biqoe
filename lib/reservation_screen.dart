@@ -582,24 +582,6 @@ class ReservationScreenState extends State<ReservationScreen> {
   }
 
   Future<void> _validateReservation() async {
-    // 1. Verifica si el usuario tiene celular en Firestore
-    final userDoc = await FirebaseFirestore.instance
-        .collection('usuarios')
-        .doc(widget.userId)
-        .get();
-
-    String? celular = userDoc.data()?['celular'];
-    if (celular == null || celular.trim().isEmpty) {
-      final phone = await _showPhoneDialog();
-      if (phone == null) return; // Cancelado
-
-      // Guarda el número en Firestore
-      await FirebaseFirestore.instance
-          .collection('usuarios')
-          .doc(widget.userId)
-          .update({'celular': phone});
-    }
-
     // Validación normal de paquetes y método de pago
     for (var package in packagesData) {
       if (package.selectedDate == null ||
@@ -721,88 +703,6 @@ class ReservationScreenState extends State<ReservationScreen> {
         ),
       ),
       backgroundColor: const Color.fromARGB(255, 243, 247, 254),
-    );
-  }
-
-  bool isValidPhone(String phone) {
-    // Puedes ajustar la validación según tus reglas
-    return RegExp(r'^\d{10,15}$').hasMatch(phone);
-  }
-
-// Muestra el diálogo para ingresar el número de celular
-  Future<String?> _showPhoneDialog() async {
-    final controller = TextEditingController();
-    String? errorText;
-
-    return await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) => AlertDialog(
-            backgroundColor: Colors.white, // Fondo blanco explícito
-            title: const Center(
-              child: Text(
-                'Ingresa tu número de celular',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  fontWeight: FontWeight.bold,
-                  color: Color.fromRGBO(17, 48, 73, 1),
-                ),
-              ),
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Este número será el que usará el proveedor para contactarte después que reserves, asegúrate de que sea un número real',
-                  style: TextStyle(
-                      fontFamily: 'Poppins',
-                      color: Color.fromRGBO(17, 48, 73, 1)),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: controller,
-                  keyboardType: TextInputType.phone,
-                  decoration: InputDecoration(
-                    hintText: 'Número de celular',
-                    hintStyle: const TextStyle(
-                        fontFamily: 'Poppins',
-                        color: Color.fromRGBO(17, 48, 73, 1)),
-                    errorText: errorText,
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                child: const Text('Cancelar',
-                    style: TextStyle(
-                        fontFamily: 'Poppins',
-                        color: Color.fromRGBO(17, 48, 73, 1))),
-                onPressed: () => Navigator.of(context).pop(null),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
-                ),
-                child: const Text('Aceptar',
-                    style:
-                        TextStyle(fontFamily: 'Poppins', color: Colors.white)),
-                onPressed: () {
-                  final phone = controller.text.trim();
-                  if (!isValidPhone(phone)) {
-                    setState(() => errorText = 'Número inválido');
-                  } else {
-                    Navigator.of(context).pop(phone);
-                  }
-                },
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }
