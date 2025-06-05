@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'package:googleapis_auth/auth_io.dart';
 import 'package:flutter/services.dart';
+import 'dart:io';
 
 class PaymentDetailsScreen extends StatefulWidget {
   final String userId;
@@ -1021,15 +1022,17 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
                               .get();
 
                           String? celular = userDoc.data()?['celular'];
-                          if (celular == null || celular.trim().isEmpty) {
+                          if ((celular == null || celular.trim().isEmpty)) {
                             final phone = await _showPhoneDialog();
-                            if (phone == null) return; // Cancelado
-
-                            // Guarda el número en Firestore
-                            await FirebaseFirestore.instance
-                                .collection('usuarios')
-                                .doc(widget.userId)
-                                .update({'celular': phone});
+                            // Si es Android y cancela, no puede continuar
+                            if (phone == null && !Platform.isIOS) return;
+                            // Si es iOS y cancela, simplemente no guarda el número
+                            if (phone != null) {
+                              await FirebaseFirestore.instance
+                                  .collection('usuarios')
+                                  .doc(widget.userId)
+                                  .update({'celular': phone});
+                            }
                           }
 
                           // Validaciones originales

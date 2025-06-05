@@ -109,9 +109,17 @@ class RegisterScreenState extends State<RegisterScreen> {
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
       return true;
     } else {
-      _showErrorMessage(
-          'Debes aceptar recibir notificaciones para continuar con el registro.');
-      return false;
+      if (Platform.isIOS) {
+        // En iPhone, permite continuar pero muestra advertencia
+        _showErrorMessage(
+            'No recibirás notificaciones push si no aceptas los permisos.');
+        return true;
+      } else {
+        // En Android, es obligatorio aceptar
+        _showErrorMessage(
+            'Debes aceptar recibir notificaciones para continuar con el registro.');
+        return false;
+      }
     }
   }
 
@@ -141,14 +149,13 @@ class RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    if (!isValidPhone(phone)) {
+    if (!Platform.isIOS && !isValidPhone(phone)) {
       _showErrorMessage('Ingrese un número de celular válido');
       return;
     }
 
-    // Solicitar permisos de notificaciones
     bool notificationsAllowed = await requestNotificationPermissions();
-    if (!notificationsAllowed) {
+    if (!notificationsAllowed && !Platform.isIOS) {
       return;
     }
 
@@ -256,7 +263,7 @@ class RegisterScreenState extends State<RegisterScreen> {
 
     // Solicitar permisos de notificaciones
     bool notificationsAllowed = await requestNotificationPermissions();
-    if (!notificationsAllowed) return;
+    if (!notificationsAllowed && !Platform.isIOS) return;
 
     try {
       // Asegurarse de empezar limpio
@@ -317,6 +324,10 @@ class RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> signInWithApple() async {
     // Ya no se valida ni se pide el número de celular
+
+    // Solicitar permisos de notificaciones
+    bool notificationsAllowed = await requestNotificationPermissions();
+    if (!notificationsAllowed) return;
 
     try {
       final appleCredential = await SignInWithApple.getAppleIDCredential(
