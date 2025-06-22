@@ -203,6 +203,60 @@ class FilterScreenState extends State<FilterScreen> {
                   checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
                 ),
                 FilterChip(
+                  label: const Text('Bienestar',
+                      style: TextStyle(
+                          fontFamily: 'Poppins', color: Colors.white)),
+                  selected: selectedCategories.contains('Bienestar'),
+                  onSelected: (selected) {
+                    setState(() {
+                      if (selected) {
+                        selectedCategories.add('Bienestar');
+                      } else {
+                        selectedCategories.remove('Bienestar');
+                      }
+                    });
+                  },
+                  backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                  selectedColor: const Color.fromRGBO(17, 48, 73, 1),
+                  checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
+                ),
+                FilterChip(
+                  label: const Text('Talleres',
+                      style: TextStyle(
+                          fontFamily: 'Poppins', color: Colors.white)),
+                  selected: selectedCategories.contains('Talleres'),
+                  onSelected: (selected) {
+                    setState(() {
+                      if (selected) {
+                        selectedCategories.add('Talleres');
+                      } else {
+                        selectedCategories.remove('Talleres');
+                      }
+                    });
+                  },
+                  backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                  selectedColor: const Color.fromRGBO(17, 48, 73, 1),
+                  checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
+                ),
+                FilterChip(
+                  label: const Text('Arte',
+                      style: TextStyle(
+                          fontFamily: 'Poppins', color: Colors.white)),
+                  selected: selectedCategories.contains('Arte'),
+                  onSelected: (selected) {
+                    setState(() {
+                      if (selected) {
+                        selectedCategories.add('Arte');
+                      } else {
+                        selectedCategories.remove('Arte');
+                      }
+                    });
+                  },
+                  backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                  selectedColor: const Color.fromRGBO(17, 48, 73, 1),
+                  checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
+                ),
+                FilterChip(
                   label: const Text('Comida',
                       style: TextStyle(
                           fontFamily: 'Poppins', color: Colors.white)),
@@ -346,6 +400,18 @@ class FilterScreenState extends State<FilterScreen> {
                 DropdownMenuItem(
                     value: 'Carabobo',
                     child: Text('Carabobo',
+                        style: TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Color.fromRGBO(17, 48, 73, 1)))),
+                DropdownMenuItem(
+                    value: 'Portuguesa',
+                    child: Text('Portuguesa',
+                        style: TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Color.fromRGBO(17, 48, 73, 1)))),
+                DropdownMenuItem(
+                    value: 'Lara',
+                    child: Text('Lara',
                         style: TextStyle(
                             fontFamily: 'Poppins',
                             color: Color.fromRGBO(17, 48, 73, 1)))),

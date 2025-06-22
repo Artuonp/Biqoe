@@ -440,6 +440,18 @@ class SearchScreenState extends State<SearchScreen> {
                             onTap: () => _navigateToCategory('Cultural'),
                             child: _buildCategoryItem("Cultural"),
                           ),
+                          GestureDetector(
+                            onTap: () => _navigateToCategory('Bienestar'),
+                            child: _buildCategoryItem("Bienestar"),
+                          ),
+                          GestureDetector(
+                            onTap: () => _navigateToCategory('Talleres'),
+                            child: _buildCategoryItem("Talleres"),
+                          ),
+                          GestureDetector(
+                            onTap: () => _navigateToCategory('Arte'),
+                            child: _buildCategoryItem("Arte"),
+                          ),
                           SizedBox(width: screenWidth * 0.02),
                           GestureDetector(
                             onTap: () => _navigateToCategory('Comida'),

@@ -99,28 +99,8 @@ class RegisterScreenState extends State<RegisterScreen> {
 
 // Solicitar permisos de notificaciones
   Future<bool> requestNotificationPermissions() async {
-    NotificationSettings settings =
-        await FirebaseMessaging.instance.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-
-    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      return true;
-    } else {
-      if (Platform.isIOS) {
-        // En iPhone, permite continuar pero muestra advertencia
-        _showErrorMessage(
-            'No recibirás notificaciones push si no aceptas los permisos.');
-        return true;
-      } else {
-        // En Android, es obligatorio aceptar
-        _showErrorMessage(
-            'Debes aceptar recibir notificaciones para continuar con el registro.');
-        return false;
-      }
-    }
+    // No mostrar ningún mensaje, solo devolver true (siempre permitir continuar)
+    return true;
   }
 
   // Función para registrar un nuevo usuario
@@ -154,10 +134,8 @@ class RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    bool notificationsAllowed = await requestNotificationPermissions();
-    if (!notificationsAllowed && !Platform.isIOS) {
-      return;
-    }
+    // Solicitar permisos de notificaciones (solo muestra mensaje, no bloquea)
+    await requestNotificationPermissions();
 
     // Esperar APNS token en iOS antes de pedir el FCM token
     if (Platform.isIOS) {
@@ -182,8 +160,6 @@ class RegisterScreenState extends State<RegisterScreen> {
     }
 
     try {
-      // Verificar si el correo ya está registrado
-
       // Intentar crear el usuario con Firebase Authentication
       UserCredential userCredential =
           await FirebaseAuth.instance.createUserWithEmailAndPassword(

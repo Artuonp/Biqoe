@@ -29,6 +29,9 @@ class AddScreenState extends State<AddScreen> {
     'Extremo',
     'Divertido',
     'Cultural',
+    'Bienestar',
+    'Talleres',
+    'Arte',
     'Comida',
     'Pernocta',
     'Vida nocturna'
