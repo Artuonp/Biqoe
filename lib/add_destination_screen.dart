@@ -34,6 +34,7 @@ class AddScreenState extends State<AddScreen> {
     'Arte',
     'Comida',
     'Pernocta',
+    'Online',
     'Vida nocturna'
   ];
 

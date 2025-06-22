@@ -292,6 +292,24 @@ class FilterScreenState extends State<FilterScreen> {
                   selectedColor: const Color.fromRGBO(17, 48, 73, 1),
                   checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
                 ),
+                FilterChip(
+                  label: const Text('Online',
+                      style: TextStyle(
+                          fontFamily: 'Poppins', color: Colors.white)),
+                  selected: selectedCategories.contains('Online'),
+                  onSelected: (selected) {
+                    setState(() {
+                      if (selected) {
+                        selectedCategories.add('Online');
+                      } else {
+                        selectedCategories.remove('Online');
+                      }
+                    });
+                  },
+                  backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                  selectedColor: const Color.fromRGBO(17, 48, 73, 1),
+                  checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
+                ),
               ],
             ),
             const SizedBox(height: 16),
