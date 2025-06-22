@@ -2,7 +2,7 @@ name: biqoe
 description: "Something"
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.0.0+36 #Recuerda el archivo de abajo
+version: 1.0.1+36 #Recuerda el archivo de abajo
 
 environment:
   sdk: '>=3.3.4 <4.0.0'
@@ -89,3 +89,4 @@ flutter:
     - assets/images/Google logo 1.svg
     - assets/images/Apple logo 2.png
     - assets/images/Google logo 2.svg
+    - assets/biqoe-app-firebase-adminsdk-fbsvc-067c9b5471.json
