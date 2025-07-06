@@ -34,5 +34,10 @@
 	<string>1:685223740510:ios:9d79a4b0abc8347d3ea0cf</string>
 	<key>DATABASE_URL</key>
 	<string>https://biqoe-app-default-rtdb.firebaseio.com</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+    	<string>https</string>
+   		<string>http</string>
+	</array>
 </dict>
 </plist>

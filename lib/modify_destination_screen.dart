@@ -112,7 +112,7 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
                     imagenesController,
                     paquetes,
                     coordenadasController,
-                    payments, // Agregar el argumento faltante
+                    payments,
                   ),
                   child: const Text('Guardar'),
                 ),
@@ -143,7 +143,6 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
             final index = entry.key;
             final paquete = entry.value;
 
-            // Solo crea el controlador si no existe
             descripcionControllers[index] ??=
                 TextEditingController(text: paquete['descripcion']);
             miniDescripcionControllers[index] ??=
@@ -196,14 +195,61 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
                         setStateDialog,
                         paquete),
                     const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () => _addDisponibilidadDialog(
-                          context,
-                          List<Map<String, dynamic>>.from(
-                              paquete['disponibilidad'] ?? []),
-                          paquete,
-                          setStateDialog),
-                      child: const Text('Agregar Disponibilidad'),
+                    // MODIFICADO: Botones en un Wrap para mejor ajuste
+                    Wrap(
+                      spacing: 8.0,
+                      runSpacing: 4.0,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        ElevatedButton.icon(
+                          icon: const Icon(Icons.calendar_today),
+                          onPressed: () => _addDisponibilidadDialog(
+                              context,
+                              List<Map<String, dynamic>>.from(
+                                  paquete['disponibilidad'] ?? []),
+                              paquete,
+                              setStateDialog),
+                          label: const Text('Por Día'),
+                        ),
+                        ElevatedButton.icon(
+                          icon: const Icon(Icons.calendar_month),
+                          onPressed: () => _addDisponibilidadPorMesDialog(
+                              context,
+                              List<Map<String, dynamic>>.from(
+                                  paquete['disponibilidad'] ?? []),
+                              paquete,
+                              setStateDialog),
+                          label: const Text('Por Mes'),
+                        ),
+                        // NUEVO: Botón para agregar por día de la semana
+                        ElevatedButton.icon(
+                          icon: const Icon(Icons.date_range),
+                          onPressed: () =>
+                              _addDisponibilidadPorDiaSemanalDialog(
+                                  context,
+                                  List<Map<String, dynamic>>.from(
+                                      paquete['disponibilidad'] ?? []),
+                                  paquete,
+                                  setStateDialog),
+                          label: const Text('Día Semanal'),
+                        ),
+                        // NUEVO: Botón para borrar todas las disponibilidades
+                        ElevatedButton.icon(
+                          icon:
+                              const Icon(Icons.delete_sweep, color: Colors.red),
+                          onPressed: () => _confirmDeleteAllDisponibilidades(
+                              context,
+                              List<Map<String, dynamic>>.from(
+                                  paquete['disponibilidad'] ?? []),
+                              paquete,
+                              setStateDialog),
+                          label: const Text('Borrar Todas',
+                              style: TextStyle(color: Colors.red)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -215,9 +261,205 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
     );
   }
 
+  // NUEVO: Diálogo de confirmación para borrar todas las disponibilidades
+  void _confirmDeleteAllDisponibilidades(
+      BuildContext context,
+      List<Map<String, dynamic>> disponibilidades,
+      Map<String, dynamic> paquete,
+      StateSetter setStateDialog) {
+    if (disponibilidades.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No hay disponibilidades para borrar.')),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Confirmar Eliminación'),
+          content: Text(
+              '¿Estás seguro de que quieres eliminar las ${disponibilidades.length} disponibilidades de este paquete? Esta acción no se puede deshacer.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () {
+                setStateDialog(() {
+                  disponibilidades.clear();
+                  paquete['disponibilidad'] = [];
+                });
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text(
+                          'Todas las disponibilidades han sido eliminadas.')),
+                );
+              },
+              child:
+                  const Text('Eliminar', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // NUEVO: Diálogo para agregar por día de la semana en un mes
+  void _addDisponibilidadPorDiaSemanalDialog(
+      BuildContext context,
+      List<Map<String, dynamic>> disponibilidades,
+      Map<String, dynamic> paquete,
+      StateSetter setStateDialog) {
+    DateTime? selectedMonth;
+    int? selectedWeekday;
+    TimeOfDay? startTime;
+    TimeOfDay? endTime;
+    final TextEditingController slotsController = TextEditingController();
+
+    final Map<int, String> weekdays = {
+      DateTime.monday: 'Lunes',
+      DateTime.tuesday: 'Martes',
+      DateTime.wednesday: 'Miércoles',
+      DateTime.thursday: 'Jueves',
+      DateTime.friday: 'Viernes',
+      DateTime.saturday: 'Sábado',
+      DateTime.sunday: 'Domingo',
+    };
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, dialogSetState) {
+            return AlertDialog(
+              title: const Text('Agregar por Día Semanal'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ElevatedButton(
+                      onPressed: () async {
+                        final DateTime? pickedDate = await showDatePicker(
+                          context: context,
+                          initialDate: DateTime.now(),
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime(2100),
+                        );
+                        if (pickedDate != null) {
+                          dialogSetState(() => selectedMonth = pickedDate);
+                        }
+                      },
+                      child: Text(selectedMonth == null
+                          ? 'Seleccionar Mes'
+                          : DateFormat('MMMM, yyyy').format(selectedMonth!)),
+                    ),
+                    DropdownButtonFormField<int>(
+                      value: selectedWeekday,
+                      hint: const Text('Seleccionar día'),
+                      items: weekdays.entries
+                          .map((entry) => DropdownMenuItem<int>(
+                                value: entry.key,
+                                child: Text(entry.value),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        dialogSetState(() => selectedWeekday = value);
+                      },
+                    ),
+                    ElevatedButton(
+                      onPressed: () async {
+                        final TimeOfDay? pickedTime = await showTimePicker(
+                            context: context, initialTime: TimeOfDay.now());
+                        if (pickedTime != null) {
+                          dialogSetState(() => startTime = pickedTime);
+                        }
+                      },
+                      child: Text(startTime == null
+                          ? 'Hora de Inicio'
+                          : startTime!.format(context)),
+                    ),
+                    ElevatedButton(
+                      onPressed: () async {
+                        final TimeOfDay? pickedTime = await showTimePicker(
+                            context: context, initialTime: TimeOfDay.now());
+                        if (pickedTime != null) {
+                          dialogSetState(() => endTime = pickedTime);
+                        }
+                      },
+                      child: Text(endTime == null
+                          ? 'Hora de Fin'
+                          : endTime!.format(context)),
+                    ),
+                    TextFormField(
+                      controller: slotsController,
+                      decoration: const InputDecoration(labelText: 'Cupos'),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancelar'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    if (selectedMonth != null &&
+                        selectedWeekday != null &&
+                        startTime != null &&
+                        endTime != null &&
+                        slotsController.text.isNotEmpty) {
+                      final year = selectedMonth!.year;
+                      final month = selectedMonth!.month;
+                      final start = startTime!.format(context);
+                      final end = endTime!.format(context);
+                      final slots = int.tryParse(slotsController.text) ?? 0;
+
+                      if (slots > 0) {
+                        final daysInMonth = DateTime(year, month + 1, 0).day;
+                        final newAvailabilities = <Map<String, dynamic>>[];
+
+                        for (int day = 1; day <= daysInMonth; day++) {
+                          final currentDate = DateTime(year, month, day);
+                          if (currentDate.weekday == selectedWeekday) {
+                            final dateString =
+                                DateFormat('yyyy-MM-dd').format(currentDate);
+                            newAvailabilities.add({
+                              'fecha': dateString,
+                              'inicio': start,
+                              'fin': end,
+                              'cupos': slots,
+                            });
+                          }
+                        }
+
+                        setStateDialog(() {
+                          disponibilidades.addAll(newAvailabilities);
+                          paquete['disponibilidad'] =
+                              List.from(disponibilidades);
+                        });
+                        Navigator.pop(context);
+                      }
+                    }
+                  },
+                  child: const Text('Agregar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildDisponibilidadEditor(List<Map<String, dynamic>> disponibilidades,
       StateSetter setStateDialog, Map<String, dynamic> paquete) {
-    // Inicializar controladores de texto para cada campo de las disponibilidades
+    // Código existente sin cambios
     final fechaControllers = disponibilidades
         .map((disponibilidad) =>
             TextEditingController(text: disponibilidad['fecha']))
@@ -325,6 +567,137 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
     );
   }
 
+  void _addDisponibilidadPorMesDialog(
+      BuildContext context,
+      List<Map<String, dynamic>> disponibilidades,
+      Map<String, dynamic> paquete,
+      StateSetter setStateDialog) {
+    DateTime? selectedMonth;
+    TimeOfDay? startTime;
+    TimeOfDay? endTime;
+    final TextEditingController slotsController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, dialogSetState) {
+            return AlertDialog(
+              title: const Text('Agregar Disponibilidad por Mes'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ElevatedButton(
+                    onPressed: () async {
+                      final DateTime? pickedDate = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now(),
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime(2100),
+                        initialDatePickerMode: DatePickerMode.day,
+                      );
+                      if (pickedDate != null) {
+                        dialogSetState(() {
+                          selectedMonth = pickedDate;
+                        });
+                      }
+                    },
+                    child: Text(selectedMonth == null
+                        ? 'Seleccionar Mes'
+                        : DateFormat('MMMM, yyyy').format(selectedMonth!)),
+                  ),
+                  ElevatedButton(
+                    onPressed: () async {
+                      final TimeOfDay? pickedStartTime = await showTimePicker(
+                        context: context,
+                        initialTime: TimeOfDay.now(),
+                      );
+                      if (pickedStartTime != null) {
+                        dialogSetState(() {
+                          startTime = pickedStartTime;
+                        });
+                      }
+                    },
+                    child: Text(startTime == null
+                        ? 'Seleccionar Hora de Inicio'
+                        : startTime!.format(context)),
+                  ),
+                  ElevatedButton(
+                    onPressed: () async {
+                      final TimeOfDay? pickedEndTime = await showTimePicker(
+                        context: context,
+                        initialTime: TimeOfDay.now(),
+                      );
+                      if (pickedEndTime != null) {
+                        dialogSetState(() {
+                          endTime = pickedEndTime;
+                        });
+                      }
+                    },
+                    child: Text(endTime == null
+                        ? 'Seleccionar Hora de Fin'
+                        : endTime!.format(context)),
+                  ),
+                  TextFormField(
+                    controller: slotsController,
+                    decoration: const InputDecoration(labelText: 'Cupos'),
+                    keyboardType: TextInputType.number,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancelar'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    if (selectedMonth != null &&
+                        startTime != null &&
+                        endTime != null &&
+                        slotsController.text.isNotEmpty) {
+                      final year = selectedMonth!.year;
+                      final month = selectedMonth!.month;
+                      final start = startTime!.format(context);
+                      final end = endTime!.format(context);
+                      final slots = int.tryParse(slotsController.text) ?? 0;
+
+                      if (slots > 0) {
+                        final daysInMonth = DateTime(year, month + 1, 0).day;
+                        final newAvailabilities = <Map<String, dynamic>>[];
+
+                        for (int day = 1; day <= daysInMonth; day++) {
+                          final currentDate = DateTime(year, month, day);
+                          final dateString =
+                              DateFormat('yyyy-MM-dd').format(currentDate);
+                          newAvailabilities.add({
+                            'fecha': dateString,
+                            'inicio': start,
+                            'fin': end,
+                            'cupos': slots,
+                          });
+                        }
+
+                        setStateDialog(() {
+                          disponibilidades.addAll(newAvailabilities);
+                          paquete['disponibilidad'] =
+                              List.from(disponibilidades);
+                        });
+
+                        Navigator.pop(context);
+                      }
+                    }
+                  },
+                  child: const Text('Agregar Mes'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _addDisponibilidadDialog(
       BuildContext context,
       List<Map<String, dynamic>> disponibilidades,
@@ -421,7 +794,6 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
 
                       if (slots > 0) {
                         setStateDialog(() {
-                          // 1) Añadimos a la copia local de disponibilidades
                           disponibilidades.add({
                             'fecha': date,
                             'inicio': start,
@@ -429,7 +801,6 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
                             'cupos': slots,
                           });
 
-                          // 2) Reasignamos esa lista al paquete original
                           paquete['disponibilidad'] =
                               List.from(disponibilidades);
                         });
@@ -450,6 +821,7 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
 
   void _addPaymentDialog(BuildContext context,
       List<Map<String, dynamic>> payments, StateSetter setStateDialog) {
+    // Código existente sin cambios
     String? selectedPaymentMethod;
     final TextEditingController emailController = TextEditingController();
     final TextEditingController nameController = TextEditingController();
@@ -562,6 +934,7 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
     ValueNotifier<bool> isHighlighted,
     TextEditingController coordenadas,
   ) {
+    // Código existente sin cambios
     return Column(
       children: [
         TextFormField(
@@ -605,7 +978,7 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
 
   Widget _buildImageEditor(
       TextEditingController controller, StateSetter setStateDialog) {
-    // Mantén la lista de imágenes sincronizada con el controlador
+    // Código existente sin cambios
     List<String> images = controller.text
         .split(',')
         .map((e) => e.trim())
@@ -629,10 +1002,8 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
       children: [
         Column(
           children: [
-            // Lista de imágenes existentes
             ...images.asMap().entries.map((entry) =>
                 _buildImageRow(entry.key, entry.value, images, updateImages)),
-            // Nuevo campo para agregar imágenes
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Row(
@@ -662,7 +1033,6 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
                 ],
               ),
             ),
-            // Previsualización de la nueva imagen
             if (newImageController.text.trim().isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
@@ -686,6 +1056,7 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
 
   Widget _buildImageRow(int index, String url, List<String> images,
       void Function(List<String>) updateImages) {
+    // Código existente sin cambios
     final controller = TextEditingController(text: url);
 
     return Padding(
@@ -748,7 +1119,7 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
 
   Widget _buildPaymentEditor(
       List<Map<String, dynamic>> payments, StateSetter setStateDialog) {
-    // Inicializar controladores de texto para cada campo de los métodos de pago
+    // Código existente sin cambios
     final metodoControllers = payments
         .map((payment) => TextEditingController(text: payment['metodo']))
         .toList();
@@ -903,8 +1274,9 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
     TextEditingController imagenes,
     List<Map<String, dynamic>> paquetes,
     TextEditingController coordenadas,
-    List<Map<String, dynamic>> payments, // Agregar los métodos de pago
+    List<Map<String, dynamic>> payments,
   ) {
+    // Código existente sin cambios
     final updatedData = {
       'nombre': nombre.text,
       'ubicacion': ubicacion.text,
@@ -918,7 +1290,7 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
           .where((e) => e.isNotEmpty)
           .toList(),
       'paquetes': paquetes,
-      'pagos': payments, // Guardar los métodos de pago
+      'pagos': payments,
     };
 
     _updateDestination(documentId, updatedData);
@@ -927,6 +1299,7 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Código existente sin cambios
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color.fromARGB(255, 243, 248, 255),

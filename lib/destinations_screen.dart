@@ -34,16 +34,19 @@ class DestinationsScreen extends StatefulWidget {
 
 class DestinationsScreenState extends State<DestinationsScreen> {
   late List<String> selectedCategories;
+  List<QueryDocumentSnapshot>? _displayedDestinations;
   late String selectedLocation;
   late int sortOption; // <-- Cambia aquí
   final TextEditingController _searchController = TextEditingController();
   String _searchText = '';
   late Box<Map> savedDestinationsBox;
   Set<String> savedDestinationIds = {};
+  late final ScrollController _scrollController;
 
   @override
   void initState() {
     super.initState();
+    _scrollController = ScrollController();
     selectedCategories = widget.initialCategories;
     selectedLocation = widget.initialLocation;
     sortOption = widget.sortOption; // <-- Cambia aquí
@@ -72,19 +75,43 @@ class DestinationsScreenState extends State<DestinationsScreen> {
     });
   }
 
+  void _updateDisplayedDestinations(List<QueryDocumentSnapshot> docs) {
+    setState(() {
+      _displayedDestinations = List<QueryDocumentSnapshot>.from(docs);
+      if (sortOption == 0) {
+        _displayedDestinations!.shuffle();
+      } else if (sortOption == 1) {
+        _displayedDestinations!.sort((a, b) {
+          final aData = a.data() as Map<String, dynamic>;
+          final bData = b.data() as Map<String, dynamic>;
+          final aPrice = _getMinPrice(aData['paquetes'] ?? []);
+          final bPrice = _getMinPrice(bData['paquetes'] ?? []);
+          return aPrice.compareTo(bPrice);
+        });
+      } else if (sortOption == 2) {
+        _displayedDestinations!.sort((a, b) {
+          final aData = a.data() as Map<String, dynamic>;
+          final bData = b.data() as Map<String, dynamic>;
+          final aPrice = _getMinPrice(aData['paquetes'] ?? []);
+          final bPrice = _getMinPrice(bData['paquetes'] ?? []);
+          return bPrice.compareTo(aPrice);
+        });
+      }
+    });
+  }
+
   void toggleSaveDestination(
       String destinationId, Map<String, dynamic> destination) {
     final userBoxName = 'saved_destinations_${widget.userId}';
     Hive.openBox<Map>(userBoxName).then((userBox) {
-      setState(() {
-        if (isDestinationSaved(destinationId, userBox)) {
-          userBox.delete(destinationId);
-          savedDestinationIds.remove(destinationId);
-        } else {
-          userBox.put(destinationId, destination);
-          savedDestinationIds.add(destinationId);
-        }
-      });
+      if (isDestinationSaved(destinationId, userBox)) {
+        userBox.delete(destinationId);
+        savedDestinationIds.remove(destinationId);
+      } else {
+        userBox.put(destinationId, destination);
+        savedDestinationIds.add(destinationId);
+      }
+      // No llames a setState aquí
     });
   }
 
@@ -118,6 +145,7 @@ class DestinationsScreenState extends State<DestinationsScreen> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
   } // Código existente
@@ -144,7 +172,17 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                   IconButton(
                     icon: const Icon(Icons.arrow_back,
                         color: Colors.black, size: 25),
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => SearchScreen(
+                            destinations: widget.destinations,
+                            userId: widget.userId,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                   SizedBox(height: screenHeight * 0.0001),
                   Row(
@@ -232,7 +270,9 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                     .collection('destinos')
                     .snapshots(),
                 builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      (_displayedDestinations == null ||
+                          _displayedDestinations!.isEmpty)) {
                     return const Center();
                   }
 
@@ -295,10 +335,19 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                     });
                   }
 
+                  if (_displayedDestinations == null ||
+                      _displayedDestinations!.length != destinations.length) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _updateDisplayedDestinations(destinations);
+                    });
+                    return const Center(); // Espera a que se actualice la lista
+                  }
+
                   return ListView.builder(
-                    itemCount: destinations.length,
+                    controller: _scrollController, // <-- Agrega esto
+                    itemCount: _displayedDestinations!.length,
                     itemBuilder: (context, index) {
-                      final destination = destinations[index];
+                      final destination = _displayedDestinations![index];
                       final data =
                           destination.data() as Map<String, dynamic>? ?? {};
                       final paquetes = data['paquetes'] as List<dynamic>? ?? [];
@@ -310,26 +359,28 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                       return Padding(
                         padding: EdgeInsets.only(bottom: screenHeight * 0.02),
                         child: GestureDetector(
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => DestinationDetailScreen(
-                                destino: data,
-                                userId: widget.userId,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => DestinationDetailScreen(
+                                  destino: data,
+                                  userId: widget.userId,
+                                ),
                               ),
-                            ),
-                          ),
-                          child: _buildDestinationCard(
-                            images: _normalizeImages(
-                                data['imagen']), // Normaliza las imágenes
+                            );
+                          },
+                          child: DestinationCard(
+                            images: _normalizeImages(data['imagen']),
                             title: data['nombre'] ?? '',
                             location: data['ubicacion'] ?? '',
                             place: data['lugar'] ?? 'Lugar no disponible',
                             price: minPrice,
                             screenWidth: screenWidth,
                             isSaved: isSaved,
-                            onFavoriteTap: () =>
-                                toggleSaveDestination(destinationId, data),
+                            userId: widget.userId,
+                            destinationId: destinationId,
+                            data: data,
                           ),
                         ),
                       );
@@ -435,46 +486,97 @@ class DestinationsScreenState extends State<DestinationsScreen> {
       ),
     );
   }
+}
 
-  Widget _buildDestinationCard({
-    required List<dynamic> images,
-    required String title,
-    required String location,
-    required String place,
-    required double price,
-    required double screenWidth,
-    required bool isSaved,
-    required VoidCallback onFavoriteTap,
-  }) {
-    final PageController pageController = PageController();
-    int currentPage = 0;
+class DestinationCard extends StatefulWidget {
+  final List<dynamic> images;
+  final String title;
+  final String location;
+  final String place;
+  final double price;
+  final double screenWidth;
+  final bool isSaved;
+  final String userId;
+  final String destinationId;
+  final Map<String, dynamic> data;
 
-    return StatefulBuilder(
-      builder: (context, setState) {
-        return Container(
-          width: screenWidth * 0.7,
-          constraints: BoxConstraints(
-            minHeight: screenWidth * 0.45,
-            maxHeight: screenWidth * 0.7,
-          ),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(screenWidth * 0.05),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(screenWidth * 0.05),
+  const DestinationCard({
+    super.key,
+    required this.images,
+    required this.title,
+    required this.location,
+    required this.place,
+    required this.price,
+    required this.screenWidth,
+    required this.isSaved,
+    required this.userId,
+    required this.destinationId,
+    required this.data,
+  });
+
+  @override
+  State<DestinationCard> createState() => _DestinationCardState();
+}
+
+class _DestinationCardState extends State<DestinationCard> {
+  late bool localIsSaved;
+  late PageController pageController;
+  int currentPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    localIsSaved = widget.isSaved;
+    pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: widget.screenWidth * 0.7,
+      width: widget.screenWidth * 0.7,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(widget.screenWidth * 0.05),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => DestinationDetailScreen(
+                  destino: widget.data,
+                  userId: widget.userId,
+                ),
+              ),
+            );
+          },
+          child: Card(
+            clipBehavior: Clip.antiAlias,
+            elevation: 4.0, // sombra
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(widget.screenWidth * 0.05),
+            ),
             child: Stack(
               children: [
                 // Carrusel de imágenes
-                if (images.isNotEmpty)
+                if (widget.images.isNotEmpty)
                   PageView.builder(
                     controller: pageController,
-                    itemCount: images.length,
+                    itemCount: widget.images.length,
                     onPageChanged: (index) {
-                      setState(() => currentPage = index);
+                      setState(() {
+                        currentPage = index;
+                      });
                     },
                     itemBuilder: (context, index) {
                       return CachedNetworkImage(
-                        imageUrl: images[index],
+                        imageUrl: widget.images[index],
                         fit: BoxFit.cover,
                         placeholder: (context, url) => Container(
                           color: Colors.grey[200],
@@ -492,19 +594,19 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                   ),
 
                 // Indicadores de posición
-                if (images.length > 1)
+                if (widget.images.length > 1)
                   Positioned(
-                    bottom: screenWidth * 0.02,
+                    bottom: widget.screenWidth * 0.02,
                     left: 0,
                     right: 0,
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(images.length, (index) {
+                      children: List.generate(widget.images.length, (index) {
                         return Container(
-                          width: screenWidth * 0.02,
-                          height: screenWidth * 0.02,
+                          width: widget.screenWidth * 0.02,
+                          height: widget.screenWidth * 0.02,
                           margin: EdgeInsets.symmetric(
-                              horizontal: screenWidth * 0.01),
+                              horizontal: widget.screenWidth * 0.01),
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: currentPage == index
@@ -518,21 +620,32 @@ class DestinationsScreenState extends State<DestinationsScreen> {
 
                 // Botón de favorito
                 Positioned(
-                  top: screenWidth * 0.025,
-                  right: screenWidth * 0.025,
+                  top: widget.screenWidth * 0.025,
+                  right: widget.screenWidth * 0.025,
                   child: GestureDetector(
-                    onTap: onFavoriteTap,
+                    onTap: () async {
+                      final userBoxName = 'saved_destinations_${widget.userId}';
+                      final userBox = await Hive.openBox<Map>(userBoxName);
+                      if (localIsSaved) {
+                        await userBox.delete(widget.destinationId);
+                      } else {
+                        await userBox.put(widget.destinationId, widget.data);
+                      }
+                      setState(() {
+                        localIsSaved = !localIsSaved;
+                      });
+                    },
                     child: Container(
-                      width: screenWidth * 0.08,
-                      height: screenWidth * 0.08,
-                      decoration: BoxDecoration(
-                        color: const Color.fromARGB(100, 17, 48, 73),
+                      width: widget.screenWidth * 0.08,
+                      height: widget.screenWidth * 0.08,
+                      decoration: const BoxDecoration(
+                        color: Color.fromARGB(100, 17, 48, 73),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        isSaved ? Icons.favorite : Icons.favorite_border,
+                        localIsSaved ? Icons.favorite : Icons.favorite_border,
                         color: Colors.white,
-                        size: screenWidth * 0.05,
+                        size: widget.screenWidth * 0.05,
                       ),
                     ),
                   ),
@@ -540,29 +653,30 @@ class DestinationsScreenState extends State<DestinationsScreen> {
 
                 // Información del destino
                 Positioned(
-                  bottom: screenWidth * 0.05,
-                  left: screenWidth * 0.075,
-                  right: screenWidth * 0.075,
+                  bottom: widget.screenWidth * 0.05,
+                  left: widget.screenWidth * 0.075,
+                  right: widget.screenWidth * 0.075,
                   child: Container(
-                    padding: EdgeInsets.all(screenWidth * 0.05),
+                    padding: EdgeInsets.all(widget.screenWidth * 0.05),
                     decoration: BoxDecoration(
                       color: const Color.fromARGB(100, 17, 48, 73),
-                      borderRadius: BorderRadius.circular(screenWidth * 0.05),
+                      borderRadius:
+                          BorderRadius.circular(widget.screenWidth * 0.05),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          title,
+                          widget.title,
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: screenWidth * 0.04,
+                            fontSize: widget.screenWidth * 0.04,
                             fontWeight: FontWeight.bold,
                             fontFamily: 'Poppins',
                           ),
                         ),
-                        SizedBox(height: screenWidth * 0.01),
+                        SizedBox(height: widget.screenWidth * 0.01),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -570,23 +684,23 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                               children: [
                                 Icon(Icons.location_on,
                                     color: Colors.white,
-                                    size: screenWidth * 0.035),
-                                SizedBox(width: screenWidth * 0.01),
+                                    size: widget.screenWidth * 0.035),
+                                SizedBox(width: widget.screenWidth * 0.01),
                                 Text(
-                                  '$location, $place',
+                                  '${widget.location}, ${widget.place}',
                                   style: TextStyle(
                                     color: Colors.white,
-                                    fontSize: screenWidth * 0.03,
+                                    fontSize: widget.screenWidth * 0.03,
                                     fontFamily: 'Poppins',
                                   ),
                                 ),
                               ],
                             ),
                             Text(
-                              '€${price.toStringAsFixed(2)}',
+                              '€${widget.price.toStringAsFixed(2)}',
                               style: TextStyle(
                                 color: Colors.white,
-                                fontSize: screenWidth * 0.03,
+                                fontSize: widget.screenWidth * 0.03,
                                 fontFamily: 'Poppins',
                               ),
                             ),
@@ -599,8 +713,8 @@ class DestinationsScreenState extends State<DestinationsScreen> {
               ],
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

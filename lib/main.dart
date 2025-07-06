@@ -8,16 +8,18 @@ import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'splash_screen.dart';
-import 'main_screen.dart';
-import 'search_screen.dart';
-import 'booking_provider.dart';
 import 'package:logger/logger.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'verify_screen.dart';
-import 'supplier_verify_screen.dart';
+import 'package:firebase_remote_config/firebase_remote_config.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import 'dart:io';
+
+import 'splash_screen.dart';
+import 'main_screen.dart';
+import 'booking_provider.dart';
+import 'verify_screen.dart';
+import 'supplier_verify_screen.dart';
 
 final List<String> destinations = [
   'Destino 1',
@@ -68,7 +70,6 @@ Future<void> main() async {
 
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-    // Solo imprime los errores, no muestra pantalla de error
     FlutterError.onError = (FlutterErrorDetails details) {
       FlutterError.presentError(details);
       logger.e('FlutterError: ${details.exceptionAsString()}');
@@ -83,14 +84,12 @@ Future<void> main() async {
         DeviceOrientation.portraitDown,
       ]);
 
-      // Inicialización mejorada de Firebase
       if (Firebase.apps.isEmpty) {
         await Firebase.initializeApp(
           options: DefaultFirebaseOptions.currentPlatform,
         );
       }
 
-      // Configuración específica para iOS
       if (Platform.isIOS) {
         await FirebaseMessaging.instance.setAutoInitEnabled(true);
         await FirebaseMessaging.instance
@@ -101,7 +100,6 @@ Future<void> main() async {
         );
       }
 
-      // Configuración de notificaciones locales
       const AndroidInitializationSettings initializationSettingsAndroid =
           AndroidInitializationSettings('@mipmap/ic_launcher');
 
@@ -120,14 +118,11 @@ Future<void> main() async {
 
       await flutterLocalNotificationsPlugin.initialize(initializationSettings);
 
-      // Configuración de Hive
       await Hive.initFlutter();
       await Hive.openBox<Map>('saved_destinations');
 
-      // Configuración de Firebase Messaging
       setupFirebaseMessaging();
 
-      // Manejo de mensajes iniciales
       FirebaseMessaging.instance
           .getInitialMessage()
           .then((RemoteMessage? message) {
@@ -140,12 +135,10 @@ Future<void> main() async {
     } catch (e, stack) {
       logger.e('Error en main: $e');
       logger.e(stack.toString());
-      // No mostrar pantalla de error
     }
   }, (error, stack) {
     logger.e('Error fuera de zona: $error');
     logger.e(stack.toString());
-    // No mostrar pantalla de error
   });
 }
 
@@ -161,7 +154,6 @@ void setupFirebaseMessaging() {
           AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
 
-  // Configuración para iOS
   if (Platform.isIOS) {
     flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
@@ -178,7 +170,6 @@ void setupFirebaseMessaging() {
     AndroidNotification? android = message.notification?.android;
     AppleNotification? ios = message.notification?.apple;
 
-    // Configuración para Android
     if (notification != null && android != null) {
       flutterLocalNotificationsPlugin.show(
         notification.hashCode,
@@ -195,7 +186,6 @@ void setupFirebaseMessaging() {
       );
     }
 
-    // Configuración para iOS
     if (notification != null && ios != null) {
       flutterLocalNotificationsPlugin.show(
         notification.hashCode,
@@ -207,13 +197,12 @@ void setupFirebaseMessaging() {
       );
     }
 
-    // Mostrar diálogo de notificación
     final context = navigatorKey.currentContext;
     if (context != null && context.mounted) {
       showDialog(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          backgroundColor: Colors.white,
+          backgroundColor: const Color.fromARGB(254, 255, 249, 255),
           title: Text(
             notification?.title ?? 'Notificación',
             style: const TextStyle(
@@ -304,13 +293,6 @@ class MyApp extends StatelessWidget {
         theme: ThemeData(
           primarySwatch: Colors.blue,
         ),
-        builder: (context, child) {
-          final mq = MediaQuery.of(context);
-          return MediaQuery(
-            data: mq.copyWith(textScaler: TextScaler.linear(1.0)),
-            child: child!,
-          );
-        },
         localizationsDelegates: const [
           GlobalMaterialLocalizations.delegate,
           GlobalWidgetsLocalizations.delegate,
@@ -319,87 +301,116 @@ class MyApp extends StatelessWidget {
         supportedLocales: const [
           Locale('es', 'ES'),
         ],
-        home: SplashWrapper(destinations: destinations),
+        builder: (context, child) {
+          final mq = MediaQuery.of(context);
+          return MediaQuery(
+            data: mq.copyWith(textScaler: TextScaler.linear(1.0)),
+            child: child!,
+          );
+        },
+        home: UpdateChecker(destinations: destinations),
       ),
     );
   }
 }
 
-class SplashWrapper extends StatefulWidget {
+/// Nueva capa: Verifica versión antes de SplashWrapper
+class UpdateChecker extends StatefulWidget {
   final List<String> destinations;
 
-  const SplashWrapper({super.key, required this.destinations});
+  const UpdateChecker({super.key, required this.destinations});
 
   @override
-  SplashWrapperState createState() => SplashWrapperState();
+  State<UpdateChecker> createState() => _UpdateCheckerState();
 }
 
-class SplashWrapperState extends State<SplashWrapper> {
+class _UpdateCheckerState extends State<UpdateChecker> {
+  bool _loading = true;
+  bool _needsUpdate = false;
+
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) =>
-                AuthWrapper(destinations: widget.destinations),
-          ),
-        );
-      }
-    });
+    _checkVersion();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return const SplashScreen();
-  }
-}
+  Future<void> _checkVersion() async {
+    final remoteConfig = FirebaseRemoteConfig.instance;
+    await remoteConfig.setConfigSettings(RemoteConfigSettings(
+      fetchTimeout: const Duration(seconds: 10),
+      minimumFetchInterval: const Duration(hours: 1),
+    ));
 
-class AuthWrapper extends StatelessWidget {
-  final List<String> destinations;
+    await remoteConfig.fetchAndActivate();
 
-  const AuthWrapper({super.key, required this.destinations});
+    final minRequiredVersion = remoteConfig.getInt('min_required_version');
+    const currentVersion = 38;
 
-  Future<void> _handleAPNSError() async {
-    if (Platform.isIOS) {
-      try {
-        String? apnsToken = await FirebaseMessaging.instance.getAPNSToken();
-        if (apnsToken == null) {
-          debugPrint('APNS token no disponible, reintentando...');
-          await Future.delayed(const Duration(seconds: 2));
-          return _handleAPNSError();
-        }
-      } catch (e) {
-        debugPrint('Error en APNS: $e');
-      }
+    if (currentVersion < minRequiredVersion) {
+      setState(() {
+        _needsUpdate = true;
+        _loading = false;
+      });
+    } else {
+      setState(() {
+        _loading = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SplashScreen();
-        } else if (snapshot.hasData) {
-          // Verificar token APNS en iOS
-          if (Platform.isIOS) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _handleAPNSError();
-            });
-          }
+    if (_loading) {
+      return const SplashScreen(
+        destinations: [],
+      );
+    }
 
-          final userId = snapshot.data?.uid ?? '';
-          return SearchScreen(
-            destinations: destinations,
-            userId: userId,
-          );
-        } else {
-          return const LoginScreen();
-        }
-      },
-    );
+    if (_needsUpdate) {
+      return Scaffold(
+        backgroundColor: Colors.black54,
+        body: Center(
+          child: AlertDialog(
+            backgroundColor: Color.fromARGB(250, 255, 255, 255),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Image.asset('assets/images/Nueva.jpeg'),
+                const SizedBox(height: 16),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => SystemNavigator.pop(),
+                child: Text(
+                  'Cancelar',
+                  style: TextStyle(color: Color.fromRGBO(17, 48, 73, 1)),
+                ),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Color.fromRGBO(17, 48, 73, 1),
+                ),
+                onPressed: () async {
+                  final url = Platform.isAndroid
+                      ? 'https://play.google.com/store/apps/details?id=com.biqoe.app&pcampaignid=web_share'
+                      : 'https://apps.apple.com/ve/app/biqoe/id6746291495';
+                  await launchUrl(
+                    Uri.parse(url),
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+                child: Text(
+                  'Actualizar',
+                  style: TextStyle(color: Colors.white),
+                ),
+              )
+            ],
+          ),
+        ),
+      );
+    }
+
+    return SplashScreen(destinations: widget.destinations);
   }
 }

@@ -95,6 +95,24 @@ class FilterScreenState extends State<FilterScreen> {
                   checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
                 ),
                 FilterChip(
+                  label: const Text('Eventos',
+                      style: TextStyle(
+                          fontFamily: 'Poppins', color: Colors.white)),
+                  selected: selectedCategories.contains('Eventos'),
+                  onSelected: (selected) {
+                    setState(() {
+                      if (selected) {
+                        selectedCategories.add('Eventos');
+                      } else {
+                        selectedCategories.remove('Eventos');
+                      }
+                    });
+                  },
+                  backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                  selectedColor: const Color.fromRGBO(17, 48, 73, 1),
+                  checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
+                ),
+                FilterChip(
                   label: const Text('Divertido',
                       style: TextStyle(
                           fontFamily: 'Poppins', color: Colors.white)),
@@ -185,16 +203,16 @@ class FilterScreenState extends State<FilterScreen> {
                   checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
                 ),
                 FilterChip(
-                  label: const Text('Cultural',
+                  label: const Text('Cultura',
                       style: TextStyle(
                           fontFamily: 'Poppins', color: Colors.white)),
-                  selected: selectedCategories.contains('Cultural'),
+                  selected: selectedCategories.contains('Cultura'),
                   onSelected: (selected) {
                     setState(() {
                       if (selected) {
-                        selectedCategories.add('Cultural');
+                        selectedCategories.add('Cultura');
                       } else {
-                        selectedCategories.remove('Cultural');
+                        selectedCategories.remove('Cultura');
                       }
                     });
                   },
@@ -257,16 +275,16 @@ class FilterScreenState extends State<FilterScreen> {
                   checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
                 ),
                 FilterChip(
-                  label: const Text('Comida',
+                  label: const Text('Restaurantes',
                       style: TextStyle(
                           fontFamily: 'Poppins', color: Colors.white)),
-                  selected: selectedCategories.contains('Comida'),
+                  selected: selectedCategories.contains('Restaurantes'),
                   onSelected: (selected) {
                     setState(() {
                       if (selected) {
-                        selectedCategories.add('Comida');
+                        selectedCategories.add('Restaurantes');
                       } else {
-                        selectedCategories.remove('Comida');
+                        selectedCategories.remove('Restaurantes');
                       }
                     });
                   },
@@ -275,16 +293,16 @@ class FilterScreenState extends State<FilterScreen> {
                   checkmarkColor: const Color.fromRGBO(240, 169, 52, 1),
                 ),
                 FilterChip(
-                  label: const Text('Pernocta',
+                  label: const Text('Hospedaje',
                       style: TextStyle(
                           fontFamily: 'Poppins', color: Colors.white)),
-                  selected: selectedCategories.contains('Pernocta'),
+                  selected: selectedCategories.contains('Hospedaje'),
                   onSelected: (selected) {
                     setState(() {
                       if (selected) {
-                        selectedCategories.add('Pernocta');
+                        selectedCategories.add('Hospedaje');
                       } else {
-                        selectedCategories.remove('Pernocta');
+                        selectedCategories.remove('Hospedaje');
                       }
                     });
                   },

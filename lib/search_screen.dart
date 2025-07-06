@@ -12,6 +12,7 @@ import 'settings_screen.dart';
 import 'search_results_screen.dart';
 import 'destination_detail_screen.dart';
 import 'package:hugeicons/hugeicons.dart';
+import 'restaurants_screen.dart'; // Agrega este import si no lo tienes
 
 // Clase principal de la pantalla de búsqueda
 class SearchScreen extends StatefulWidget {
@@ -36,10 +37,13 @@ class SearchScreenState extends State<SearchScreen> {
   String userName = '';
   late Box<Map> savedDestinationsBox;
   Set<String> savedDestinationIds = {};
+  late final ScrollController _highlightedScrollController;
+  List<QueryDocumentSnapshot>? _displayedDestinations;
 
   @override
   void initState() {
     super.initState();
+    _highlightedScrollController = ScrollController();
 
     _searchController.addListener(() {
       if (mounted) {
@@ -54,6 +58,7 @@ class SearchScreenState extends State<SearchScreen> {
 
   @override
   void dispose() {
+    _highlightedScrollController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -172,17 +177,14 @@ class SearchScreenState extends State<SearchScreen> {
       String destinationId, Map<String, dynamic> destination) {
     final userBoxName = 'saved_destinations_${widget.userId}';
     Hive.openBox<Map>(userBoxName).then((userBox) {
-      if (mounted) {
-        setState(() {
-          if (isDestinationSaved(destinationId)) {
-            userBox.delete(destinationId);
-            savedDestinationIds.remove(destinationId);
-          } else {
-            userBox.put(destinationId, destination);
-            savedDestinationIds.add(destinationId);
-          }
-        });
+      if (isDestinationSaved(destinationId)) {
+        userBox.delete(destinationId);
+        savedDestinationIds.remove(destinationId);
+      } else {
+        userBox.put(destinationId, destination);
+        savedDestinationIds.add(destinationId);
       }
+      // No llames a setState aquí
     });
   }
 
@@ -219,6 +221,24 @@ class SearchScreenState extends State<SearchScreen> {
 
   // Navega a la pantalla de una categoría específica
   void _navigateToCategory(String category) {
+    if (category == "Restaurantes") {
+      Navigator.push(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (_, __, ___) => RestaurantsScreen(
+            userId: widget.userId,
+          ),
+          transitionsBuilder: (_, animation, __, child) {
+            return FadeTransition(
+              opacity: animation,
+              child: child,
+            );
+          },
+          transitionDuration: const Duration(milliseconds: 600),
+        ),
+      );
+      return;
+    }
     Navigator.push(
       context,
       PageRouteBuilder(
@@ -227,7 +247,7 @@ class SearchScreenState extends State<SearchScreen> {
           destinations: const [],
           initialCategories: [category],
           initialLocation: 'Todas',
-          sortOption: 0, // 0 = aleatorio, 1 = ascendente, 2 = descendente
+          sortOption: 0,
           searchText: _searchText,
         ),
         transitionsBuilder: (_, animation, __, child) {
@@ -412,38 +432,28 @@ class SearchScreenState extends State<SearchScreen> {
                         scrollDirection: Axis.horizontal,
                         children: [
                           GestureDetector(
-                            onTap: () => _navigateToCategory('Playa'),
-                            child: _buildCategoryItem("Playa"),
-                          ),
-                          SizedBox(width: screenWidth * 0.02),
-                          GestureDetector(
-                            onTap: () => _navigateToCategory('Montaña'),
-                            child: _buildCategoryItem("Montaña"),
-                          ),
-                          SizedBox(width: screenWidth * 0.02),
-                          GestureDetector(
                             onTap: () => _navigateToCategory('Ciudad'),
                             child: _buildCategoryItem("Ciudad"),
                           ),
                           SizedBox(width: screenWidth * 0.02),
                           GestureDetector(
-                            onTap: () => _navigateToCategory('Extremo'),
-                            child: _buildCategoryItem("Extremo"),
+                            onTap: () => _navigateToCategory('Playa'),
+                            child: _buildCategoryItem("Playa"),
                           ),
                           SizedBox(width: screenWidth * 0.02),
                           GestureDetector(
-                            onTap: () => _navigateToCategory('Divertido'),
-                            child: _buildCategoryItem("Divertido"),
+                            onTap: () => _navigateToCategory('Restaurantes'),
+                            child: _buildCategoryItem("Restaurantes"),
                           ),
                           SizedBox(width: screenWidth * 0.02),
                           GestureDetector(
-                            onTap: () => _navigateToCategory('Cultural'),
-                            child: _buildCategoryItem("Cultural"),
+                            onTap: () => _navigateToCategory('Eventos'),
+                            child: _buildCategoryItem("Eventos"),
                           ),
                           SizedBox(width: screenWidth * 0.02),
                           GestureDetector(
-                            onTap: () => _navigateToCategory('Bienestar'),
-                            child: _buildCategoryItem("Bienestar"),
+                            onTap: () => _navigateToCategory('Hospedaje'),
+                            child: _buildCategoryItem("Hospedaje"),
                           ),
                           SizedBox(width: screenWidth * 0.02),
                           GestureDetector(
@@ -452,23 +462,38 @@ class SearchScreenState extends State<SearchScreen> {
                           ),
                           SizedBox(width: screenWidth * 0.02),
                           GestureDetector(
+                            onTap: () => _navigateToCategory('Bienestar'),
+                            child: _buildCategoryItem("Bienestar"),
+                          ),
+                          SizedBox(width: screenWidth * 0.02),
+                          GestureDetector(
+                            onTap: () => _navigateToCategory('Cultura'),
+                            child: _buildCategoryItem("Cultura"),
+                          ),
+                          SizedBox(width: screenWidth * 0.02),
+                          GestureDetector(
                             onTap: () => _navigateToCategory('Arte'),
                             child: _buildCategoryItem("Arte"),
                           ),
                           SizedBox(width: screenWidth * 0.02),
                           GestureDetector(
-                            onTap: () => _navigateToCategory('Comida'),
-                            child: _buildCategoryItem("Comida"),
-                          ),
-                          SizedBox(width: screenWidth * 0.02),
-                          GestureDetector(
-                            onTap: () => _navigateToCategory('Pernocta'),
-                            child: _buildCategoryItem("Pernocta"),
-                          ),
-                          SizedBox(width: screenWidth * 0.02),
-                          GestureDetector(
                             onTap: () => _navigateToCategory('Vida nocturna'),
                             child: _buildCategoryItem("Vida nocturna"),
+                          ),
+                          SizedBox(width: screenWidth * 0.02),
+                          GestureDetector(
+                            onTap: () => _navigateToCategory('Extremo'),
+                            child: _buildCategoryItem("Extremo"),
+                          ),
+                          SizedBox(width: screenWidth * 0.02),
+                          GestureDetector(
+                            onTap: () => _navigateToCategory('Montaña'),
+                            child: _buildCategoryItem("Montaña"),
+                          ),
+                          SizedBox(width: screenWidth * 0.02),
+                          GestureDetector(
+                            onTap: () => _navigateToCategory('Divertido'),
+                            child: _buildCategoryItem("Divertido"),
                           ),
                           SizedBox(width: screenWidth * 0.02),
                           GestureDetector(
@@ -505,29 +530,39 @@ class SearchScreenState extends State<SearchScreen> {
                         stream: FirebaseFirestore.instance
                             .collection('destinos')
                             .where('IsHighlighted', isEqualTo: true)
+                            .orderBy(
+                                'highlightOrder') // <-- Orden personalizado
                             .snapshots(),
                         builder: (context, snapshot) {
                           if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const Center();
+                                  ConnectionState.waiting &&
+                              (_displayedDestinations == null ||
+                                  _displayedDestinations!.isEmpty)) {
+                            // No muestres nada mientras carga por primera vez
+                            return SizedBox.shrink();
                           }
-                          if (snapshot.hasError) {
-                            return const Center(
-                                child: Text('Error al cargar destinos'));
-                          }
-                          if (!snapshot.hasData ||
-                              snapshot.data!.docs.isEmpty) {
-                            return const Center(
-                                child: Text('No hay opciones destacados',
-                                    style: TextStyle(
-                                        color: Color.fromRGBO(17, 48, 73, 1),
-                                        fontSize: 16,
-                                        fontFamily: 'Poppins')));
+                          if (snapshot.hasData &&
+                              snapshot.data!.docs.isNotEmpty) {
+                            _displayedDestinations = snapshot.data!.docs;
                           }
 
-                          final destinations = snapshot.data!.docs;
+                          // Si no hay datos y tampoco hay guardados, muestra mensaje
+                          if (_displayedDestinations == null ||
+                              _displayedDestinations!.isEmpty) {
+                            return const Center(
+                              child: Text('No hay opciones destacados',
+                                  style: TextStyle(
+                                      color: Color.fromRGBO(17, 48, 73, 1),
+                                      fontSize: 16,
+                                      fontFamily: 'Poppins')),
+                            );
+                          }
+
+                          final destinations = _displayedDestinations!;
 
                           return ListView.builder(
+                            controller:
+                                _highlightedScrollController, // <-- Agrega esto
                             scrollDirection: Axis.horizontal,
                             itemCount: destinations.length,
                             itemBuilder: (context, index) {
@@ -563,7 +598,9 @@ class SearchScreenState extends State<SearchScreen> {
                                       ),
                                     );
                                   },
-                                  child: _buildDestinationCard(
+                                  child: DestinationCard(
+                                    key: ValueKey(
+                                        destinationId), // Importante para evitar parpadeos
                                     images: (data['imagen'] is List)
                                         ? (data['imagen'] as List<dynamic>)
                                             .cast<String>()
@@ -740,220 +777,256 @@ class SearchScreenState extends State<SearchScreen> {
   }
 
   // Construye una tarjeta de destino
-  Widget _buildDestinationCard({
-    required List<String> images,
-    required String title,
-    required String location,
-    required double price,
-    required double screenWidth,
-    required bool isSaved,
-    required VoidCallback onFavoriteTap,
-    required String place,
-  }) {
-    final PageController pageController = PageController();
-    int currentPage = 0;
+}
 
-    return StatefulBuilder(
-      builder: (context, setState) {
-        return Container(
-          width: screenWidth * 0.75,
-          constraints: BoxConstraints(
-            minHeight: screenWidth * 0.5,
-            maxHeight: screenWidth * 0.75,
+class DestinationCard extends StatefulWidget {
+  final List<String> images;
+  final String title;
+  final String location;
+  final String place;
+  final double price;
+  final double screenWidth;
+  final bool isSaved;
+  final VoidCallback onFavoriteTap;
+
+  const DestinationCard({
+    super.key,
+    required this.images,
+    required this.title,
+    required this.location,
+    required this.place,
+    required this.price,
+    required this.screenWidth,
+    required this.isSaved,
+    required this.onFavoriteTap,
+  });
+
+  @override
+  State<DestinationCard> createState() => _DestinationCardState();
+}
+
+class _DestinationCardState extends State<DestinationCard> {
+  late bool localIsSaved;
+  int currentPage = 0;
+  late final PageController pageController;
+
+  @override
+  void initState() {
+    super.initState();
+    localIsSaved = widget.isSaved;
+    pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: widget.screenWidth * 0.75,
+      constraints: BoxConstraints(
+        minHeight: widget.screenWidth * 0.5,
+        maxHeight: widget.screenWidth * 0.75,
+      ),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(widget.screenWidth * 0.05),
+      ),
+      child: Stack(
+        children: [
+          // Carrusel de imágenes
+          ClipRRect(
+            borderRadius: BorderRadius.circular(widget.screenWidth * 0.05),
+            child: PageView.builder(
+              controller: pageController,
+              itemCount: widget.images.length,
+              physics: const NeverScrollableScrollPhysics(), // <-- Solo flechas
+              onPageChanged: (index) {
+                setState(() {
+                  currentPage = index;
+                });
+              },
+              itemBuilder: (context, index) {
+                return Image.network(
+                  widget.images[index],
+                  fit: BoxFit.cover,
+                );
+              },
+            ),
           ),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(screenWidth * 0.05),
-          ),
-          child: Stack(
-            children: [
-              // Carrusel de imágenes (desactivado el scroll manual)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(screenWidth * 0.05),
-                child: PageView.builder(
-                  controller: pageController,
-                  physics:
-                      const NeverScrollableScrollPhysics(), // Desactiva el scroll
-                  itemCount: images.length,
-                  onPageChanged: (index) => setState(() => currentPage = index),
-                  itemBuilder: (context, index) {
-                    return Image.network(
-                      images[index],
-                      fit: BoxFit.cover,
-                    );
-                  },
-                ),
-              ),
 
-              // Flechas de navegación
-              if (images.length > 1)
-                Positioned(
-                  left: screenWidth * 0.02,
-                  right: screenWidth * 0.02,
-                  top: 0,
-                  bottom: 0,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // Flecha izquierda
-                      if (currentPage > 0)
-                        GestureDetector(
-                          onTap: () {
-                            pageController.previousPage(
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeInOut,
-                            );
-                          },
-                          child: Container(
-                            padding: EdgeInsets.all(screenWidth * 0.015),
-                            decoration: BoxDecoration(
-                              color: const Color.fromARGB(128, 17, 48, 73),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.chevron_left,
-                              color: Colors.white,
-                              size: screenWidth * 0.06,
-                            ),
-                          ),
-                        ),
-                      // Flecha derecha
-                      if (currentPage < images.length - 1)
-                        GestureDetector(
-                          onTap: () {
-                            pageController.nextPage(
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeInOut,
-                            );
-                          },
-                          child: Container(
-                            padding: EdgeInsets.all(screenWidth * 0.015),
-                            decoration: BoxDecoration(
-                              color: const Color.fromARGB(128, 17, 48, 73),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.chevron_right,
-                              color: Colors.white,
-                              size: screenWidth * 0.06,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-
-              // Indicadores de página
-              if (images.length > 1)
-                Positioned(
-                  bottom: screenWidth * 0.017,
-                  left: 0,
-                  right: 0,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(images.length, (index) {
-                      return Container(
-                        width: screenWidth * 0.02,
-                        height: screenWidth * 0.02,
-                        margin: EdgeInsets.symmetric(
-                            horizontal: screenWidth * 0.01),
+          // Flechas de navegación
+          if (widget.images.length > 1)
+            Positioned(
+              left: widget.screenWidth * 0.02,
+              right: widget.screenWidth * 0.02,
+              top: 0,
+              bottom: 0,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  if (currentPage > 0)
+                    GestureDetector(
+                      onTap: () {
+                        pageController.previousPage(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                        );
+                      },
+                      child: Container(
+                        padding: EdgeInsets.all(widget.screenWidth * 0.015),
                         decoration: BoxDecoration(
+                          color: const Color.fromARGB(128, 17, 48, 73),
                           shape: BoxShape.circle,
-                          color: currentPage == index
-                              ? Colors.white
-                              : const Color.fromARGB(128, 255, 255, 255),
                         ),
-                      );
-                    }),
-                  ),
-                ),
-
-              // Ícono de favorito
-              Positioned(
-                top: screenWidth * 0.025,
-                right: screenWidth * 0.025,
-                child: GestureDetector(
-                  onTap: onFavoriteTap,
-                  child: Container(
-                    width: screenWidth * 0.08,
-                    height: screenWidth * 0.08,
-                    decoration: BoxDecoration(
-                      color: const Color.fromARGB(128, 17, 48, 73),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      isSaved ? Icons.favorite : Icons.favorite_border,
-                      color: Colors.white,
-                      size: screenWidth * 0.05,
-                    ),
-                  ),
-                ),
-              ),
-
-              // Recuadro inferior
-              Positioned(
-                bottom: screenWidth * 0.05,
-                left: screenWidth * 0.075,
-                right: screenWidth * 0.075,
-                child: Container(
-                  padding: EdgeInsets.all(screenWidth * 0.05),
-                  decoration: BoxDecoration(
-                    color: const Color.fromARGB(
-                        128, 17, 48, 73), // 102 es el valor alfa (0, 0, 0),
-                    borderRadius: BorderRadius.circular(screenWidth * 0.05),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
+                        child: Icon(
+                          Icons.chevron_left,
                           color: Colors.white,
-                          fontSize: screenWidth * 0.04,
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'Poppins',
+                          size: widget.screenWidth * 0.06,
                         ),
                       ),
-                      SizedBox(height: screenWidth * 0.01),
+                    ),
+                  if (currentPage < widget.images.length - 1)
+                    GestureDetector(
+                      onTap: () {
+                        pageController.nextPage(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                        );
+                      },
+                      child: Container(
+                        padding: EdgeInsets.all(widget.screenWidth * 0.015),
+                        decoration: BoxDecoration(
+                          color: const Color.fromARGB(128, 17, 48, 73),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.chevron_right,
+                          color: Colors.white,
+                          size: widget.screenWidth * 0.06,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+          // Indicadores de página
+          if (widget.images.length > 1)
+            Positioned(
+              bottom: widget.screenWidth * 0.017,
+              left: 0,
+              right: 0,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(widget.images.length, (index) {
+                  return Container(
+                    width: widget.screenWidth * 0.02,
+                    height: widget.screenWidth * 0.02,
+                    margin: EdgeInsets.symmetric(
+                        horizontal: widget.screenWidth * 0.01),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: currentPage == index
+                          ? Colors.white
+                          : const Color.fromARGB(128, 255, 255, 255),
+                    ),
+                  );
+                }),
+              ),
+            ),
+
+          // Ícono de favorito
+          Positioned(
+            top: widget.screenWidth * 0.025,
+            right: widget.screenWidth * 0.025,
+            child: GestureDetector(
+              onTap: () async {
+                widget.onFavoriteTap();
+                setState(() {
+                  localIsSaved = !localIsSaved;
+                });
+              },
+              child: Container(
+                width: widget.screenWidth * 0.08,
+                height: widget.screenWidth * 0.08,
+                decoration: BoxDecoration(
+                  color: const Color.fromARGB(128, 17, 48, 73),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  localIsSaved ? Icons.favorite : Icons.favorite_border,
+                  color: Colors.white,
+                  size: widget.screenWidth * 0.05,
+                ),
+              ),
+            ),
+          ),
+
+          // Recuadro inferior
+          Positioned(
+            bottom: widget.screenWidth * 0.05,
+            left: widget.screenWidth * 0.075,
+            right: widget.screenWidth * 0.075,
+            child: Container(
+              padding: EdgeInsets.all(widget.screenWidth * 0.05),
+              decoration: BoxDecoration(
+                color: const Color.fromARGB(128, 17, 48, 73),
+                borderRadius: BorderRadius.circular(widget.screenWidth * 0.05),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    widget.title,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: widget.screenWidth * 0.04,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Poppins',
+                    ),
+                  ),
+                  SizedBox(height: widget.screenWidth * 0.01),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.location_on,
-                                color: Colors.white,
-                                size: screenWidth * 0.035,
-                              ),
-                              SizedBox(width: screenWidth * 0.01),
-                              Text(
-                                location,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: screenWidth * 0.03,
-                                  fontFamily: 'Poppins',
-                                ),
-                              ),
-                            ],
+                          Icon(
+                            Icons.location_on,
+                            color: Colors.white,
+                            size: widget.screenWidth * 0.035,
                           ),
+                          SizedBox(width: widget.screenWidth * 0.01),
                           Text(
-                            '€$price',
+                            widget.location,
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: screenWidth * 0.03,
+                              fontSize: widget.screenWidth * 0.03,
                               fontFamily: 'Poppins',
                             ),
                           ),
                         ],
                       ),
+                      Text(
+                        '€${widget.price}',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: widget.screenWidth * 0.03,
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
                     ],
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 }

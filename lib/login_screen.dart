@@ -292,6 +292,7 @@ class LoginFormScreenState extends State<LoginFormScreen> {
               const SizedBox(height: 8.0),
               TextField(
                 controller: _passwordController,
+                obscureText: true, // <-- Esto oculta la contraseña
                 decoration: const InputDecoration(
                   hintText: 'Contraseña',
                   border: UnderlineInputBorder(),

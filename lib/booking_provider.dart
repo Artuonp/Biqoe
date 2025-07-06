@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-
 import 'package:intl/intl.dart';
 import 'package:logger/logger.dart';
 
@@ -25,23 +24,23 @@ class BookingProvider extends ChangeNotifier {
 
   Future<void> loadBookings(String userId) async {
     try {
-      // Consulta TODAS las reservas del usuario usando collectionGroup
       QuerySnapshot pendingSnapshot = await _firestore
           .collectionGroup('reservas')
           .where('userId', isEqualTo: userId)
           .where('estado', isEqualTo: 'pendiente')
           .get();
-
       QuerySnapshot verifiedSnapshot = await _firestore
           .collectionGroup('reservas')
           .where('userId', isEqualTo: userId)
           .where('estado', isEqualTo: 'verificado')
           .get();
 
-      _userBookings[userId] = [
-        ...pendingSnapshot.docs.map((doc) => _mapBookingDoc(doc)),
-        ...verifiedSnapshot.docs.map((doc) => _mapBookingDoc(doc)),
-      ];
+      if (userId.isNotEmpty) {
+        _userBookings[userId] = [
+          ...pendingSnapshot.docs.map((doc) => _mapBookingDoc(doc)),
+          ...verifiedSnapshot.docs.map((doc) => _mapBookingDoc(doc)),
+        ];
+      }
 
       notifyListeners();
     } catch (e) {
@@ -49,20 +48,20 @@ class BookingProvider extends ChangeNotifier {
     }
   }
 
+  // MODIFICADO: Ahora mapea correctamente los nuevos tipos de paquetes desde Firestore.
   Map<String, dynamic> _mapBookingDoc(QueryDocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     return {
       'id': doc.id,
-      'planName': data['planName'], // Cambiado de planID a planName
+      'planName': data['planName'],
       'totalPriceBs': data['totalPriceBs'],
       'name': data['name'],
       'email': data['email'],
       'celular': data['celular'],
-      'planLocation': data['planLocation'], // Cambiado de ubicacion
-      'planPrice': data['totalPrice'], // Cambiado de precio a totalPrice
-      'transactionCode':
-          data['transactionCode'], // Cambiado de codigoTransaccion
-      'receipt': data['receipt'], // Cambiado de comprobante
+      'planLocation': data['planLocation'],
+      'planPrice': data['totalPrice'],
+      'transactionCode': data['transactionCode'],
+      'receipt': data['receipt'],
       'fecha': data['fecha'],
       'estado': data['estado'],
       'supplier': data['supplier'],
@@ -71,18 +70,31 @@ class BookingProvider extends ChangeNotifier {
       'cedula': data['cedula'],
       'numero': data['numero'],
       'correo': data['correo'],
-      'packages': (data['packages'] as List<dynamic>)
-          .map((pkg) => {
-                'numero': pkg['numero'],
-                'fechaReserva': pkg['fechaReserva'],
-                'horaReserva': pkg['horaReserva'],
-                'personas': pkg['personas'],
-                'miniDescripcion': pkg['miniDescripcion'],
-              })
-          .toList(),
+      'packages': (data['packages'] as List<dynamic>).map((pkg) {
+        if (pkg is! Map<String, dynamic>) return {};
+
+        final bookingType = pkg['tipoDeReserva'] ?? 'Reserva';
+        Map<String, dynamic> packageDetails = {
+          'numero': pkg['numero'],
+          'personas': pkg['personas'],
+          'miniDescripcion': pkg['miniDescripcion'],
+          'tipoDeReserva': bookingType,
+        };
+
+        if (bookingType == 'Reserva' && pkg['fechaReserva'] != null) {
+          packageDetails['fechaReserva'] = pkg['fechaReserva'];
+          packageDetails['horaReserva'] = pkg['horaReserva'];
+        } else if (bookingType == 'Reserva Flexible' &&
+            pkg['instrucciones'] != null) {
+          packageDetails['instrucciones'] = pkg['instrucciones'];
+        }
+
+        return packageDetails;
+      }).toList(),
     };
   }
 
+  // MODIFICADO: El método addBooking ahora es dinámico y guarda los datos correctos para cada tipo de paquete.
   Future<void> addBooking({
     required String userId,
     required String planName,
@@ -92,7 +104,7 @@ class BookingProvider extends ChangeNotifier {
     required String celular,
     required String planLocation,
     required double planPrice,
-    required String supplier, // Este es el supplierId (UID del proveedor)
+    required String supplier,
     required String paymentMethod,
     required String transactionCode,
     required String receipt,
@@ -105,11 +117,9 @@ class BookingProvider extends ChangeNotifier {
   }) async {
     try {
       final fecha = DateTime.now().toIso8601String();
-
-      // Usar supplierId como ID del documento en "reservaciones"
       final docRef = _firestore
           .collection('reservaciones')
-          .doc(supplier) // Cambiado de userId a supplier
+          .doc(supplier)
           .collection('reservas')
           .doc(documentId);
 
@@ -125,22 +135,33 @@ class BookingProvider extends ChangeNotifier {
         'receipt': receipt,
         'fecha': fecha,
         'estado': 'pendiente',
-        'supplier': supplier, // Proveedor
-        'userId': userId, // Usuario que hace la reserva
+        'supplier': supplier,
+        'userId': userId,
         'paymentMethod': paymentMethod,
         'code': code,
         'cedula': cedula,
         'numero': numero,
         'correo': correo,
         'packages': packagesData.map((pkg) {
-          DateTime fecha = _parseFecha(pkg['fecha']);
-          return {
+          final String bookingType = pkg['tipoDeReserva'] ?? 'Reserva';
+          Map<String, dynamic> packageToSave = {
             'numero': pkg['numero'],
-            'fechaReserva': DateFormat('yyyy-MM-dd').format(fecha),
-            'horaReserva': pkg['hora'],
             'personas': pkg['personas'],
             'miniDescripcion': pkg['miniDescripcion'],
+            'tipoDeReserva': bookingType,
           };
+
+          if (bookingType == 'Reserva') {
+            DateTime fechaReserva = _parseFecha(pkg['fecha']);
+            packageToSave['fechaReserva'] =
+                DateFormat('yyyy-MM-dd').format(fechaReserva);
+            packageToSave['horaReserva'] = pkg['hora'];
+          } else if (bookingType == 'Reserva Flexible') {
+            packageToSave['instrucciones'] = pkg['instrucciones'];
+          }
+          // Los tipos 'Ticket' y 'Suscripción' no guardan campos adicionales en el paquete de la reserva.
+
+          return packageToSave;
         }).toList(),
       };
 
@@ -148,25 +169,37 @@ class BookingProvider extends ChangeNotifier {
       await loadBookings(userId);
     } catch (e, stacktrace) {
       logger.e('Error al agregar reserva: $e\n$stacktrace');
+      throw Exception('Error al crear la reserva en el provider: $e');
     }
   }
 
+  // MODIFICADO: Ahora también maneja Timestamps de Firestore, haciéndolo más robusto.
   DateTime _parseFecha(dynamic fecha) {
     if (fecha is DateTime) return fecha;
     if (fecha is String) return DateFormat('yyyy-MM-dd').parse(fecha);
+    if (fecha is Timestamp) return fecha.toDate();
     throw FormatException('Formato de fecha no válido: $fecha');
   }
 
+  // MODIFICADO: Corrige un error lógico al actualizar el estado local
   Future<void> verifyBooking(String reservaId, String supplierId) async {
     try {
-      await _firestore
+      final reservaRef = _firestore
           .collection('reservaciones')
           .doc(supplierId)
           .collection('reservas')
-          .doc(reservaId)
-          .update({'estado': 'verificado'});
+          .doc(reservaId);
 
-      updateBookingStatus(supplierId, reservaId, 'verificado');
+      await reservaRef.update({'estado': 'verificado'});
+
+      // Busca el userId del cliente para actualizar el estado en la UI
+      final doc = await reservaRef.get();
+      if (doc.exists) {
+        final userId = doc.data()?['userId'];
+        if (userId != null) {
+          updateBookingStatus(userId, reservaId, 'verificado');
+        }
+      }
 
       notifyListeners();
     } catch (e) {

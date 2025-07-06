@@ -7,7 +7,7 @@ import 'search_screen.dart'; // Importa la pantalla de búsqueda
 
 // Clase principal de la pantalla de splash
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
+  const SplashScreen({super.key, required List<String> destinations});
 
   @override
   SplashScreenState createState() => SplashScreenState();

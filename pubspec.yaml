@@ -2,7 +2,7 @@ name: biqoe
 description: "Something"
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.0.2+37 #Recuerda el archivo de abajo
+version: 2.0.0+38 #Recuerda el archivo de abajo
 
 environment:
   sdk: '>=3.3.4 <4.0.0'
@@ -20,6 +20,8 @@ dependencies:
   http: ^1.2.2
   hive: ^2.2.3
   hive_flutter: ^1.1.0
+  firebase_remote_config: ^5.4.7  # Para leer la configuración remota
+  package_info_plus: ^8.3.0      # Para leer la versión actual de tu app
   intl: ^0.20.2
   firebase_messaging: ^15.2.6
   pdf: ^3.10.0
@@ -89,3 +91,4 @@ flutter:
     - assets/images/Google logo 1.svg
     - assets/images/Apple logo 2.png
     - assets/images/Google logo 2.svg
+    - assets/images/Nueva.jpeg

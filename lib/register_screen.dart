@@ -517,6 +517,7 @@ class RegisterScreenState extends State<RegisterScreen> {
               const SizedBox(height: 16.0),
               TextField(
                 controller: passwordController,
+                obscureText: true, // <-- Esto oculta la contraseña
                 decoration: const InputDecoration(
                   hintText: 'Contraseña',
                   border: UnderlineInputBorder(),

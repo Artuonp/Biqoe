@@ -4,6 +4,7 @@ import 'add_destination_screen.dart';
 import 'modify_destination_screen.dart';
 import 'delete_destination_screen.dart';
 import 'tasa_screen.dart';
+import 'highlited_order_screen.dart';
 
 class BiqoeTeamScreen extends StatelessWidget {
   final String userId; // Agregamos el parámetro userId
@@ -182,6 +183,38 @@ class BiqoeTeamScreen extends StatelessWidget {
                   ],
                 ),
               ),
+
+              const SizedBox(height: 16), // Espacio entre botones
+
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => const HighlitedOrderScreen()),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16.0),
+                  backgroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.star, color: Color.fromRGBO(17, 48, 73, 1)),
+                    SizedBox(width: 8),
+                    Text(
+                      'Ordenar destacados',
+                      style: TextStyle(
+                          fontSize: 16, color: Color.fromRGBO(17, 48, 73, 1)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16), // Espacio entre botones
             ],
           ),
         ),

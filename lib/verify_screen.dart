@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart'; // Importamos intl para formatear fechas
 import 'package:logger/logger.dart';
 import 'package:flutter/services.dart';
 import 'package:googleapis_auth/auth_io.dart';
@@ -26,6 +27,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
   @override
   void initState() {
     super.initState();
+    // La consulta inicial está bien, trae todas las reservas
     _reservationsStream =
         FirebaseFirestore.instance.collectionGroup('reservas').snapshots();
     _searchController.addListener(() {
@@ -42,15 +44,27 @@ class _VerifyScreenState extends State<VerifyScreen> {
   }
 
   Future<void> _verifyBooking(
-      BuildContext context, String reservaId, String userId) async {
+      BuildContext context, String reservaId, String supplierId) async {
+    // MODIFICADO: Ahora pasamos el supplierId a la función de verificación
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     try {
       final bookingProvider =
           Provider.of<BookingProvider>(context, listen: false);
-      await bookingProvider.verifyBooking(reservaId, userId);
+      // Usamos el supplierId que viene con la reserva para la ruta del documento
+      await bookingProvider.verifyBooking(reservaId, supplierId);
 
-      // Enviar notificación al usuario
-      await _sendNotificationToUser(userId);
+      // Obtenemos el userId del cliente para enviarle la notificación
+      final doc = await FirebaseFirestore.instance
+          .collection('reservaciones')
+          .doc(supplierId)
+          .collection('reservas')
+          .doc(reservaId)
+          .get();
+      final clienteUserId = doc.data()?['userId'];
+
+      if (clienteUserId != null) {
+        await _sendNotificationToUser(clienteUserId);
+      }
 
       scaffoldMessenger.showSnackBar(
         const SnackBar(content: Text('Reserva verificada con éxito')),
@@ -71,14 +85,10 @@ class _VerifyScreenState extends State<VerifyScreen> {
 
     try {
       final serviceAccount = ServiceAccountCredentials.fromJson(
-        await rootBundle.loadString(serviceAccountPath),
-      );
-
+          await rootBundle.loadString(serviceAccountPath));
       final client = await clientViaServiceAccount(serviceAccount, scopes);
-
       const String fcmUrl =
           'https://fcm.googleapis.com/v1/projects/biqoe-app/messages:send';
-
       final userSnapshot = await FirebaseFirestore.instance
           .collection('usuarios')
           .doc(userId)
@@ -96,22 +106,12 @@ class _VerifyScreenState extends State<VerifyScreen> {
                 'title': 'Reserva Verificada',
                 'body': 'Tu reserva ha sido verificada.',
               },
-              'data': {
-                'click_action': 'FLUTTER_NOTIFICATION_CLICK',
-                'message': 'Tu reserva ha sido verificada.',
-              },
+              'data': {'click_action': 'FLUTTER_NOTIFICATION_CLICK'},
             },
           };
-
-          final response = await client.post(
-            Uri.parse(fcmUrl),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode(notification),
-          );
-
-          if (response.statusCode != 200) {
-            logger.e('Error al enviar la notificación: ${response.body}');
-          }
+          await client.post(Uri.parse(fcmUrl),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode(notification));
         }
       }
     } catch (e) {
@@ -119,6 +119,69 @@ class _VerifyScreenState extends State<VerifyScreen> {
     }
   }
 
+  // MODIFICADO: Lógica de detalles de paquete ahora es condicional
+  List<Widget> _buildPackageInfo(Map<String, dynamic> reservaData) {
+    final packages = reservaData['packages'] as List<dynamic>?;
+    if (packages == null || packages.isEmpty) return [];
+
+    return [
+      const SizedBox(height: 3),
+      Text('Código: ${reservaData['code']}',
+          style: GoogleFonts.poppins(
+              color: const Color.fromARGB(255, 3, 113, 10),
+              fontWeight: FontWeight.bold)),
+      const SizedBox(height: 8),
+      Text('Detalles de paquetes comprados:',
+          style: GoogleFonts.poppins(
+              fontWeight: FontWeight.bold,
+              color: const Color.fromRGBO(17, 48, 73, 1))),
+      ...packages.map<Widget>((pkg) {
+        final package = pkg as Map<String, dynamic>;
+        final bookingType = package['tipoDeReserva'] ?? 'Reserva';
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                  '• Paquete ${package['numero']} (${package['miniDescripcion']})',
+                  style: GoogleFonts.poppins(
+                      color: const Color.fromRGBO(17, 48, 73, 1),
+                      fontSize: 14)),
+              Text('   Cantidad: ${package['personas']}',
+                  style: GoogleFonts.poppins(
+                      color: const Color.fromRGBO(17, 48, 73, 1),
+                      fontSize: 14)),
+
+              // Lógica condicional para mostrar detalles
+              if (bookingType == 'Reserva') ...[
+                if (package['fechaReserva'] != null)
+                  Text(
+                      '   Fecha: ${_formatDate(DateTime.parse(package['fechaReserva']))}',
+                      style: GoogleFonts.poppins(
+                          color: const Color.fromRGBO(17, 48, 73, 1),
+                          fontSize: 14)),
+                if (package['horaReserva'] != null)
+                  Text('   Hora: ${package['horaReserva']}',
+                      style: GoogleFonts.poppins(
+                          color: const Color.fromRGBO(17, 48, 73, 1),
+                          fontSize: 14)),
+              ] else ...[
+                Text('   Tipo: $bookingType',
+                    style: GoogleFonts.poppins(
+                        color: const Color.fromRGBO(17, 48, 73, 1),
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold)),
+              ]
+            ],
+          ),
+        );
+      }),
+    ];
+  }
+
+  // El resto de los métodos build... y auxiliares se mantienen casi igual
   Widget _buildSearchBar() {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -134,9 +197,8 @@ class _VerifyScreenState extends State<VerifyScreen> {
           contentPadding:
               const EdgeInsets.symmetric(vertical: 0, horizontal: 20),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none),
         ),
         style: GoogleFonts.poppins(fontSize: 16),
       ),
@@ -144,9 +206,8 @@ class _VerifyScreenState extends State<VerifyScreen> {
   }
 
   Widget _buildReservationCard(
-      Map<String, dynamic> reservaData, String reservaId, String userId) {
+      Map<String, dynamic> reservaData, String reservaId, String supplierId) {
     final fecha = _parseDate(reservaData['fecha']);
-
     return Card(
       color: Colors.white,
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
@@ -156,98 +217,39 @@ class _VerifyScreenState extends State<VerifyScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              reservaData['planName'] ??
-                  reservaData['planID'] ??
-                  'Nombre no disponible',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF113049),
-              ),
-            ),
+            Text(reservaData['planName'] ?? 'Nombre no disponible',
+                style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF113049))),
             const SizedBox(height: 8),
             ..._buildPackageInfo(reservaData),
             ..._buildPaymentInfo(reservaData, fecha),
             ..._buildUserInfo(reservaData),
-            _buildVerificationButton(reservaData, reservaId, userId),
+            _buildVerificationButton(reservaData, reservaId, supplierId),
           ],
         ),
       ),
     );
   }
 
-  List<Widget> _buildPackageInfo(Map<String, dynamic> reservaData) {
-    final packages = reservaData['packages'] as List<dynamic>?;
-    if (packages == null || packages.isEmpty) return [];
-
-    return [
-      const SizedBox(height: 3),
-      Text('Código: ${reservaData['code']}',
-          style: GoogleFonts.poppins(
-              color: const Color.fromARGB(255, 3, 113, 10),
-              fontWeight: FontWeight.bold)),
-      const SizedBox(height: 8),
-      Text(
-        'Detalles de paquetes comprados:',
-        style: GoogleFonts.poppins(
-          fontWeight: FontWeight.bold,
-          color: const Color.fromRGBO(17, 48, 73, 1),
-        ),
-      ),
-      ...packages.map<Widget>((pkg) {
-        final package = pkg as Map<String, dynamic>;
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                  '• Paquete ${package['numero']}  (${package['miniDescripcion']})',
-                  style: GoogleFonts.poppins(
-                      color: const Color.fromRGBO(17, 48, 73, 1),
-                      fontSize: 14)),
-              if (package['fechaReserva'] != null)
-                Text(
-                    '    Fecha: ${_formatDate(DateTime.parse(package['fechaReserva']))}',
-                    style: GoogleFonts.poppins(
-                        color: const Color.fromRGBO(17, 48, 73, 1),
-                        fontSize: 14)),
-              if (package['horaReserva'] != null)
-                Text('    Hora: ${package['horaReserva']}',
-                    style: GoogleFonts.poppins(
-                        color: const Color.fromRGBO(17, 48, 73, 1),
-                        fontSize: 14)),
-              Text('    Cantidad: ${package['personas']}',
-                  style: GoogleFonts.poppins(
-                      color: const Color.fromRGBO(17, 48, 73, 1),
-                      fontSize: 14)),
-            ],
-          ),
-        );
-      }),
-    ];
-  }
-
   List<Widget> _buildPaymentInfo(
       Map<String, dynamic> reservaData, DateTime? fecha) {
-    double totalDolares = reservaData['totalPrice']?.toDouble() ?? 0.0;
-    double totalPriceBs = reservaData['totalPriceBs']?.toDouble() ?? 0.0;
-
+    double totalDolares =
+        (reservaData['totalPrice'] as num?)?.toDouble() ?? 0.0;
+    double totalPriceBs =
+        (reservaData['totalPriceBs'] as num?)?.toDouble() ?? 0.0;
     return [
       const SizedBox(height: 12),
+      Text('Detalles del pago:',
+          style: GoogleFonts.poppins(
+              color: const Color.fromRGBO(17, 48, 73, 1),
+              fontSize: 14,
+              fontWeight: FontWeight.bold)),
       Text(
-        'Detalles del pago:',
-        style: GoogleFonts.poppins(
-            color: const Color.fromRGBO(17, 48, 73, 1),
-            fontSize: 14,
-            fontWeight: FontWeight.bold),
-      ),
-      Text(
-        'Pago: \$${totalDolares.toStringAsFixed(2)} | Bs ${totalPriceBs.toStringAsFixed(2)}',
-        style: GoogleFonts.poppins(
-            color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14),
-      ),
+          'Pago: \$${totalDolares.toStringAsFixed(2)} | Bs ${totalPriceBs.toStringAsFixed(2)}',
+          style: GoogleFonts.poppins(
+              color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
       if (fecha != null) ...[
         Text('Fecha: ${_formatDate(fecha)}',
             style: GoogleFonts.poppins(
@@ -256,11 +258,9 @@ class _VerifyScreenState extends State<VerifyScreen> {
             style: GoogleFonts.poppins(
                 color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
       ],
-      Text(
-        'Método: ${reservaData['paymentMethod'] ?? 'No especificado'}',
-        style: GoogleFonts.poppins(
-            color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14),
-      ),
+      Text('Método: ${reservaData['paymentMethod'] ?? 'No especificado'}',
+          style: GoogleFonts.poppins(
+              color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
     ];
   }
 
@@ -283,13 +283,11 @@ class _VerifyScreenState extends State<VerifyScreen> {
             style: GoogleFonts.poppins(
                 color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
       const SizedBox(height: 12),
-      Text(
-        'Datos del usuario:',
-        style: GoogleFonts.poppins(
-            color: const Color.fromRGBO(17, 48, 73, 1),
-            fontSize: 14,
-            fontWeight: FontWeight.bold),
-      ),
+      Text('Datos del usuario:',
+          style: GoogleFonts.poppins(
+              color: const Color.fromRGBO(17, 48, 73, 1),
+              fontSize: 14,
+              fontWeight: FontWeight.bold)),
       if (reservaData['name']?.isNotEmpty ?? false)
         Text('Nombre: ${reservaData['name']}',
             style: GoogleFonts.poppins(
@@ -306,30 +304,24 @@ class _VerifyScreenState extends State<VerifyScreen> {
   }
 
   Widget _buildVerificationButton(
-      Map<String, dynamic> reservaData, String reservaId, String userId) {
+      Map<String, dynamic> reservaData, String reservaId, String supplierId) {
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Align(
         alignment: Alignment.centerRight,
         child: reservaData['estado'] == 'pendiente'
             ? ElevatedButton(
-                onPressed: () => _verifyBooking(context, reservaId, userId),
+                onPressed: () => _verifyBooking(context, reservaId, supplierId),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF113049),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: Text(
-                  'Verificar',
-                  style: GoogleFonts.poppins(color: Colors.white),
-                ),
+                    backgroundColor: const Color(0xFF113049),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8))),
+                child: Text('Verificar',
+                    style: GoogleFonts.poppins(color: Colors.white)),
               )
             : Chip(
-                label: Text(
-                  'Verificado',
-                  style: GoogleFonts.poppins(color: Colors.white),
-                ),
+                label: Text('Verificado',
+                    style: GoogleFonts.poppins(color: Colors.white)),
                 backgroundColor: const Color.fromARGB(255, 17, 139, 22),
               ),
       ),
@@ -338,29 +330,29 @@ class _VerifyScreenState extends State<VerifyScreen> {
 
   DateTime? _parseDate(dynamic fecha) {
     try {
-      return fecha is String ? DateTime.parse(fecha) : fecha as DateTime?;
+      if (fecha is String) return DateTime.parse(fecha);
+      if (fecha is Timestamp) return fecha.toDate();
+      return fecha as DateTime?;
     } catch (_) {
       return null;
     }
   }
 
-  String _formatDate(DateTime date) =>
-      '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
-
-  String _formatTime(DateTime date) =>
-      '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  String _formatDate(DateTime date) => DateFormat('dd/MM/yyyy').format(date);
+  String _formatTime(DateTime date) => DateFormat('hh:mm a').format(date);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        title: const Text("Verificar Reservas"),
         backgroundColor: const Color.fromARGB(255, 243, 248, 255),
         elevation: 0,
       ),
       backgroundColor: const Color.fromARGB(255, 243, 248, 255),
       body: Padding(
         padding: EdgeInsets.symmetric(
-            horizontal: MediaQuery.of(context).size.width * 0.08, vertical: 20),
+            horizontal: MediaQuery.of(context).size.width * 0.04, vertical: 10),
         child: Column(
           children: [
             _buildSearchBar(),
@@ -373,39 +365,25 @@ class _VerifyScreenState extends State<VerifyScreen> {
                   }
                   if (snapshot.hasError) {
                     return Center(
-                      child: Text('Error: ${snapshot.error}',
-                          style: GoogleFonts.poppins(fontSize: 16)),
-                    );
+                        child: Text('Error: ${snapshot.error}',
+                            style: GoogleFonts.poppins(fontSize: 16)));
                   }
                   final data = snapshot.data?.docs;
                   if (data == null || data.isEmpty) {
                     return Center(
-                      child: Text('No hay reservas disponibles',
-                          style: GoogleFonts.poppins(
-                              fontSize: 18.0, color: Colors.grey)),
-                    );
+                        child: Text('No hay reservas disponibles',
+                            style: GoogleFonts.poppins(
+                                fontSize: 18.0, color: Colors.grey)));
                   }
+
+                  // CORREGIDO: Se elimina el filtro que descartaba las reservas sin fecha/hora.
                   final filteredReservations = data.where((doc) {
                     final reservaData = doc.data() as Map<String, dynamic>;
                     final code =
                         reservaData['code']?.toString().toLowerCase() ?? '';
-                    if (!code.contains(_searchQuery.toLowerCase())) {
-                      return false;
-                    }
-
-                    final packages = reservaData['packages'] as List<dynamic>?;
-                    if (packages == null || packages.isEmpty) return false;
-
-                    return packages.any((pkg) {
-                      final package = pkg as Map<String, dynamic>;
-                      final fechaReserva = package['fechaReserva'];
-                      final horaReserva = package['horaReserva'];
-                      return fechaReserva != null &&
-                          horaReserva != null &&
-                          (fechaReserva as String).isNotEmpty &&
-                          (horaReserva as String).isNotEmpty;
-                    });
+                    return code.contains(_searchQuery.toLowerCase());
                   }).toList();
+
                   final pendingReservations = filteredReservations
                       .where((doc) =>
                           (doc.data() as Map<String, dynamic>)['estado'] ==
@@ -417,17 +395,31 @@ class _VerifyScreenState extends State<VerifyScreen> {
                           'verificado')
                       .toList();
 
+                  if (filteredReservations.isEmpty) {
+                    return Center(
+                        child: Text(
+                            'No se encontraron reservas con ese código.',
+                            style: GoogleFonts.poppins(
+                                fontSize: 18.0, color: Colors.grey)));
+                  }
+
                   return ListView(
                     children: [
-                      ...pendingReservations.map((doc) => _buildReservationCard(
-                          doc.data() as Map<String, dynamic>,
-                          doc.id,
-                          doc.reference.parent.parent?.id ?? '')),
-                      ...verifiedReservations.map((doc) =>
-                          _buildReservationCard(
-                              doc.data() as Map<String, dynamic>,
-                              doc.id,
-                              doc.reference.parent.parent?.id ?? '')),
+                      ...pendingReservations.map((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        // Pasamos el supplierId correctamente para la verificación
+                        final supplierId = data['supplier'] ??
+                            doc.reference.parent.parent?.id ??
+                            '';
+                        return _buildReservationCard(data, doc.id, supplierId);
+                      }),
+                      ...verifiedReservations.map((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        final supplierId = data['supplier'] ??
+                            doc.reference.parent.parent?.id ??
+                            '';
+                        return _buildReservationCard(data, doc.id, supplierId);
+                      }),
                     ],
                   );
                 },

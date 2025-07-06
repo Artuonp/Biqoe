@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'reservation_screen.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 class DestinationDetailScreen extends StatefulWidget {
   final Map<String, dynamic> destino;
@@ -23,10 +24,36 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
   int _currentPage = 0;
   List<Map<String, dynamic>> selectedPackages = [];
 
+  late Box<Map> savedDestinationsBox;
+  bool isSaved = false;
+
   @override
   void initState() {
     super.initState();
     selectedPackages = [];
+    _initSavedBox();
+  }
+
+  Future<void> _initSavedBox() async {
+    savedDestinationsBox =
+        await Hive.openBox<Map>('saved_destinations_${widget.userId}');
+    setState(() {
+      isSaved = savedDestinationsBox.keys
+          .contains(widget.destino['id'] ?? widget.destino['nombre']);
+    });
+  }
+
+  void _toggleSaveDestination() {
+    final destinationId = widget.destino['id'] ?? widget.destino['nombre'];
+    setState(() {
+      if (savedDestinationsBox.keys.contains(destinationId)) {
+        savedDestinationsBox.delete(destinationId);
+        isSaved = false;
+      } else {
+        savedDestinationsBox.put(destinationId, widget.destino);
+        isSaved = true;
+      }
+    });
   }
 
   void _togglePackageSelection(Map<String, dynamic> paquete) {
@@ -104,6 +131,26 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                           child: Text('Sin imágenes',
                               style: TextStyle(fontFamily: 'Poppins'))),
                     ),
+                  Positioned(
+                    top: 16,
+                    right: 16,
+                    child: GestureDetector(
+                      onTap: _toggleSaveDestination,
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: const Color.fromARGB(100, 17, 48, 73),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          isSaved ? Icons.favorite : Icons.favorite_border,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                    ),
+                  ),
                   if (images.length > 1)
                     Positioned(
                       bottom: 10,
@@ -225,15 +272,19 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Text(
-                                  'Paquete ${paquete['numero'] ?? index + 1}',
-                                  style: TextStyle(
-                                    color: isSelected
-                                        ? Colors.white
-                                        : const Color.fromRGBO(17, 48, 73, 1),
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                    fontFamily: 'Poppins',
+                                Flexible(
+                                  child: Text(
+                                    '${paquete['miniDescripcion']}',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: isSelected
+                                          ? Colors.white
+                                          : const Color.fromRGBO(17, 48, 73, 1),
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      fontFamily: 'Poppins',
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(height: 4),
