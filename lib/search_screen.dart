@@ -38,7 +38,6 @@ class SearchScreenState extends State<SearchScreen> {
   late Box<Map> savedDestinationsBox;
   Set<String> savedDestinationIds = {};
   late final ScrollController _highlightedScrollController;
-  List<QueryDocumentSnapshot>? _displayedDestinations;
 
   @override
   void initState() {
@@ -527,102 +526,98 @@ class SearchScreenState extends State<SearchScreen> {
                     SizedBox(
                       height: screenHeight * 0.4,
                       child: StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('destinos')
-                            .where('IsHighlighted', isEqualTo: true)
-                            .orderBy(
-                                'highlightOrder') // <-- Orden personalizado
-                            .snapshots(),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                                  ConnectionState.waiting &&
-                              (_displayedDestinations == null ||
-                                  _displayedDestinations!.isEmpty)) {
-                            // No muestres nada mientras carga por primera vez
-                            return SizedBox.shrink();
-                          }
-                          if (snapshot.hasData &&
-                              snapshot.data!.docs.isNotEmpty) {
-                            _displayedDestinations = snapshot.data!.docs;
-                          }
+                          stream: FirebaseFirestore.instance
+                              .collection('destinos')
+                              .where('IsHighlighted', isEqualTo: true)
+                              .orderBy(
+                                  'highlightOrder') // <-- Orden personalizado
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              // Mientras carga por primera vez, muestra un espacio vacío o un loader
+                              return const SizedBox.shrink();
+                            }
 
-                          // Si no hay datos y tampoco hay guardados, muestra mensaje
-                          if (_displayedDestinations == null ||
-                              _displayedDestinations!.isEmpty) {
-                            return const Center(
-                              child: Text('No hay opciones destacados',
+                            if (!snapshot.hasData ||
+                                snapshot.data!.docs.isEmpty) {
+                              return const Center(
+                                child: Text(
+                                  'No hay opciones destacadas',
                                   style: TextStyle(
-                                      color: Color.fromRGBO(17, 48, 73, 1),
-                                      fontSize: 16,
-                                      fontFamily: 'Poppins')),
-                            );
-                          }
-
-                          final destinations = _displayedDestinations!;
-
-                          return ListView.builder(
-                            controller:
-                                _highlightedScrollController, // <-- Agrega esto
-                            scrollDirection: Axis.horizontal,
-                            itemCount: destinations.length,
-                            itemBuilder: (context, index) {
-                              final destination = destinations[index];
-                              final data =
-                                  destination.data() as Map<String, dynamic>;
-                              final destinationId = destination.id;
-                              final isSaved = isDestinationSaved(destinationId);
-
-                              return Padding(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: screenWidth * 0.02,
-                                ),
-                                child: GestureDetector(
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      PageRouteBuilder(
-                                        pageBuilder: (_, __, ___) =>
-                                            DestinationDetailScreen(
-                                          destino: data,
-                                          userId: widget.userId,
-                                        ),
-                                        transitionsBuilder:
-                                            (_, animation, __, child) {
-                                          return FadeTransition(
-                                            opacity: animation,
-                                            child: child,
-                                          );
-                                        },
-                                        transitionDuration:
-                                            const Duration(milliseconds: 600),
-                                      ),
-                                    );
-                                  },
-                                  child: DestinationCard(
-                                    key: ValueKey(
-                                        destinationId), // Importante para evitar parpadeos
-                                    images: (data['imagen'] is List)
-                                        ? (data['imagen'] as List<dynamic>)
-                                            .cast<String>()
-                                        : [data['imagen']?.toString() ?? ''],
-                                    title: data['nombre'],
-                                    location: data['ubicacion'],
-                                    price: _getMinPrice(data['paquetes'] ?? []),
-                                    place:
-                                        data['lugar'] ?? 'Lugar no disponible',
-                                    screenWidth: screenWidth,
-                                    isSaved: isSaved,
-                                    onFavoriteTap: () {
-                                      toggleSaveDestination(
-                                          destinationId, data);
-                                    },
+                                    color: Color.fromRGBO(17, 48, 73, 1),
+                                    fontSize: 16,
+                                    fontFamily: 'Poppins',
                                   ),
                                 ),
                               );
-                            },
-                          );
-                        },
-                      ),
+                            }
+
+                            final destinations = snapshot.data!.docs;
+
+                            return ListView.builder(
+                              controller: _highlightedScrollController,
+                              scrollDirection: Axis.horizontal,
+                              itemCount: destinations.length,
+                              itemBuilder: (context, index) {
+                                final destination = destinations[index];
+                                final data =
+                                    destination.data() as Map<String, dynamic>;
+                                final destinationId = destination.id;
+                                final isSaved =
+                                    isDestinationSaved(destinationId);
+
+                                return Padding(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: screenWidth * 0.02,
+                                  ),
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        PageRouteBuilder(
+                                          pageBuilder: (_, __, ___) =>
+                                              DestinationDetailScreen(
+                                            destino: data,
+                                            userId: widget.userId,
+                                          ),
+                                          transitionsBuilder:
+                                              (_, animation, __, child) {
+                                            return FadeTransition(
+                                              opacity: animation,
+                                              child: child,
+                                            );
+                                          },
+                                          transitionDuration:
+                                              const Duration(milliseconds: 600),
+                                        ),
+                                      );
+                                    },
+                                    child: DestinationCard(
+                                      key: ValueKey(
+                                          destinationId), // Evita parpadeos
+                                      images: (data['imagen'] is List)
+                                          ? (data['imagen'] as List<dynamic>)
+                                              .cast<String>()
+                                          : [data['imagen']?.toString() ?? ''],
+                                      title: data['nombre'],
+                                      location: data['ubicacion'],
+                                      price:
+                                          _getMinPrice(data['paquetes'] ?? []),
+                                      place: data['lugar'] ??
+                                          'Lugar no disponible',
+                                      screenWidth: screenWidth,
+                                      isSaved: isSaved,
+                                      onFavoriteTap: () {
+                                        toggleSaveDestination(
+                                            destinationId, data);
+                                      },
+                                    ),
+                                  ),
+                                );
+                              },
+                            );
+                          }),
                     ),
                   ],
                 ),
