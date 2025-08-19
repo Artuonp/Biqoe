@@ -176,7 +176,7 @@ class AddScreenState extends State<AddScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     DropdownButtonFormField<String>(
-                      value: selectedBookingType,
+                      initialValue: selectedBookingType,
                       hint: const Text('Seleccione el tipo de reserva'),
                       onChanged: (String? newValue) {
                         setStateDialog(() {
@@ -508,7 +508,7 @@ class AddScreenState extends State<AddScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   DropdownButtonFormField<String>(
-                    value: selectedPaymentMethod,
+                    initialValue: selectedPaymentMethod,
                     decoration:
                         const InputDecoration(labelText: 'Método de Pago'),
                     items: [
@@ -697,7 +697,7 @@ class AddScreenState extends State<AddScreen> {
                     : null,
               ),
               DropdownButtonFormField<String>(
-                value: _selectedSupplier,
+                initialValue: _selectedSupplier,
                 decoration: const InputDecoration(
                     labelText: 'Proveedor:',
                     labelStyle: TextStyle(
@@ -731,7 +731,7 @@ class AddScreenState extends State<AddScreen> {
                     }
                   });
                 },
-                activeColor: const Color.fromRGBO(17, 48, 73, 1),
+                activeThumbColor: const Color.fromRGBO(17, 48, 73, 1),
               ),
 
               // 2. Sección de filtros de cocina (aparece condicionalmente)

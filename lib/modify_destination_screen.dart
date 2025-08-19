@@ -358,7 +358,7 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
                           : DateFormat('MMMM, yyyy').format(selectedMonth!)),
                     ),
                     DropdownButtonFormField<int>(
-                      value: selectedWeekday,
+                      initialValue: selectedWeekday,
                       hint: const Text('Seleccionar día'),
                       items: weekdays.entries
                           .map((entry) => DropdownMenuItem<int>(
@@ -838,7 +838,7 @@ class ModifyDestinationScreenState extends State<ModifyDestinationScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
-                value: selectedPaymentMethod,
+                initialValue: selectedPaymentMethod,
                 decoration: const InputDecoration(labelText: 'Método de Pago'),
                 items: [
                   'Pago móvil',
