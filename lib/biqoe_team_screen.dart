@@ -5,6 +5,7 @@ import 'modify_destination_screen.dart';
 import 'delete_destination_screen.dart';
 import 'tasa_screen.dart';
 import 'highlited_order_screen.dart';
+import 'confirmation_biqoe_screen.dart';
 
 class BiqoeTeamScreen extends StatelessWidget {
   final String userId; // Agregamos el parámetro userId
@@ -214,7 +215,37 @@ class BiqoeTeamScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: 16), // Espacio entre botones
+              const SizedBox(height: 16),
+
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => const ConfirmationBiqoeScreen()),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16.0),
+                  backgroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.star, color: Color.fromRGBO(17, 48, 73, 1)),
+                    SizedBox(width: 8),
+                    Text(
+                      'Confirmar asistencia',
+                      style: TextStyle(
+                          fontSize: 16, color: Color.fromRGBO(17, 48, 73, 1)),
+                    ),
+                  ],
+                ),
+              ),
+              // Espacio entre botones
             ],
           ),
         ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:qr_flutter/qr_flutter.dart'; // NUEVO: Import para el QR
 import 'saved_destinations_screen.dart';
 import 'settings_screen.dart';
 import 'booking_provider.dart';
@@ -18,7 +19,7 @@ class BookingsScreen extends StatefulWidget {
 }
 
 class BookingsScreenState extends State<BookingsScreen> {
-  bool showPendingPlans = true; // Cambiado para mayor claridad
+  bool showPendingPlans = true;
   List<Map<String, dynamic>> savedDestinations = [];
 
   @override
@@ -30,11 +31,53 @@ class BookingsScreenState extends State<BookingsScreen> {
     });
   }
 
-  // MODIFICADO: Nueva función para construir los detalles del paquete dinámicamente
+  // NUEVO: Función para mostrar el QR en grande
+  void _showQrDialog(String code) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+                color: Colors.white, borderRadius: BorderRadius.circular(15)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Código de Reserva',
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: const Color.fromRGBO(17, 48, 73, 1),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                QrImageView(
+                  data: code,
+                  version: QrVersions.auto,
+                  size: 200.0,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  code,
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: const Color.fromRGBO(17, 48, 73, 1),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   List<Widget> _buildPackageDetails(Map<String, dynamic> pkg) {
     final bookingType = pkg['tipoDeReserva'] ?? 'Reserva';
 
-    // Detalles comunes a todos los tipos
     List<Widget> details = [
       Text(
         'Paquete: ${pkg['numero']} (${pkg['miniDescripcion']})',
@@ -48,7 +91,6 @@ class BookingsScreenState extends State<BookingsScreen> {
       ),
     ];
 
-    // Detalles específicos por tipo
     switch (bookingType) {
       case 'Reserva':
         if (pkg['fechaReserva'] != null) {
@@ -90,7 +132,6 @@ class BookingsScreenState extends State<BookingsScreen> {
     return details;
   }
 
-  // MODIFICADO: Lógica de construcción de la lista de reservas
   Widget _buildBookingsList(
       List<Map<String, dynamic>> bookings, double screenWidth) {
     if (bookings.isEmpty) {
@@ -110,48 +151,83 @@ class BookingsScreenState extends State<BookingsScreen> {
       itemCount: bookings.length,
       itemBuilder: (context, index) {
         final booking = bookings[index];
-
-        // ELIMINADO: El chequeo de 'hasInvalidPackages' ya no es necesario.
-        // La nueva lógica maneja todos los tipos de paquetes.
+        final bookingCode = booking['code'] ?? '';
 
         return Card(
           color: Colors.white,
           margin: const EdgeInsets.symmetric(vertical: 8.0),
-          child: ListTile(
-            title: Text(
-              booking['planName'],
-              style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.bold,
-                  color: const Color.fromRGBO(17, 48, 73, 1)),
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 2,
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text(
-                  '${booking['planLocation']} - €${booking['planPrice']}',
-                  style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.bold,
-                      color: const Color.fromRGBO(17, 48, 73, 1)),
+                // Columna izquierda con toda la información
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        booking['planName'],
+                        style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: const Color.fromRGBO(17, 48, 73, 1)),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        '${booking['planLocation']} - €${booking['planPrice']}',
+                        style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.bold,
+                            color: const Color.fromRGBO(17, 48, 73, 1)),
+                      ),
+                      const Divider(height: 16, color: Colors.black12),
+                      ...(booking['packages'] as List<dynamic>)
+                          .expand<Widget>((pkg) => _buildPackageDetails(pkg)),
+                      Text(
+                        'Código: $bookingCode',
+                        style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: const Color.fromRGBO(17, 48, 73, 1),
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
                 ),
-                // MODIFICADO: Usa el nuevo método para construir los detalles del paquete
-                ...(booking['packages'] as List<dynamic>)
-                    .expand<Widget>((pkg) => _buildPackageDetails(pkg)),
-                Text(
-                  'Código: ${booking['code']}',
-                  style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: const Color.fromRGBO(17, 48, 73, 1),
-                      fontWeight: FontWeight.bold),
-                ),
+                const SizedBox(width: 16), // Espacio entre el texto y el QR
+
+                // Columna derecha con el estado y el QR
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      booking['estado'] == 'pendiente'
+                          ? 'Pendiente'
+                          : 'Verificado',
+                      style: GoogleFonts.poppins(
+                          color: booking['estado'] == 'pendiente'
+                              ? Colors.orange
+                              : Colors.green,
+                          fontWeight: FontWeight.bold),
+                    ),
+                    if (booking['estado'] == 'verificado') ...[
+                      const SizedBox(height: 6), // Espacio reducido
+                      GestureDetector(
+                        onTap: () => _showQrDialog(bookingCode),
+                        child: QrImageView(
+                          data: bookingCode,
+                          version: QrVersions.auto,
+                          size: 48.0, // Tamaño ligeramente ajustado
+                          gapless: false,
+                        ),
+                      ),
+                    ]
+                  ],
+                )
               ],
-            ),
-            trailing: Text(
-              booking['estado'] == 'pendiente' ? 'Pendiente' : 'Verificado',
-              style: GoogleFonts.poppins(
-                  color: booking['estado'] == 'pendiente'
-                      ? Colors.orange
-                      : Colors.green),
             ),
           ),
         );
@@ -190,14 +266,11 @@ class BookingsScreenState extends State<BookingsScreen> {
     );
   }
 
-  // El resto del widget (build, didChangeDependencies, etc.) se mantiene igual
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final bookingProvider = Provider.of<BookingProvider>(context);
-
     bookingProvider.addListener(() {
-      // Este listener puede ser útil para forzar un rebuild si algo cambia en el provider
       if (mounted) {
         setState(() {});
       }

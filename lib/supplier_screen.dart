@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'supplier_verify_screen.dart';
 import 'supplier_calendar_screen.dart'; // Importa la nueva pantalla
+import 'confirmation_screen.dart';
 
 class SupplierScreen extends StatelessWidget {
   final String userId; // Agregamos el parámetro userId
@@ -50,6 +51,19 @@ class SupplierScreen extends StatelessWidget {
                 context,
                 MaterialPageRoute(
                   builder: (context) => const SupplierCalendarScreen(),
+                ),
+              ),
+              primaryColor: primaryColor,
+              accentColor: accentColor,
+            ),
+            SizedBox(height: size.height * 0.03), // Espacio entre botones
+            _buildFeatureButton(
+              icon: Icons.calendar_month_rounded, // Nuevo ícono
+              label: 'Confirmación de asistencia', // Nueva etiqueta
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ConfirmationScreen(),
                 ),
               ),
               primaryColor: primaryColor,

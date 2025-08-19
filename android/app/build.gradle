@@ -20,12 +20,12 @@ if (localPropertiesFile.exists()) {
 
 def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
 if (flutterVersionCode == null) {
-    flutterVersionCode = '39'
+    flutterVersionCode = '40'
 }
 
 def flutterVersionName = localProperties.getProperty('flutter.versionName')
 if (flutterVersionName == null) {
-    flutterVersionName = '3.0.0'
+    flutterVersionName = '4.0.0'
 }
 
 // Definición única de keystoreProperties y keystorePropertiesFile
