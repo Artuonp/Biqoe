@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:intl/intl.dart';
 
@@ -23,8 +22,12 @@ class _ConfirmationBiqoeScreenState extends State<ConfirmationBiqoeScreen>
   String _unconfirmedSearchQuery = '';
   String _confirmedSearchQuery = '';
 
+  /// Guardamos las reservas traídas desde Firestore. Cada elemento contendrá:
+  /// - los campos del documento,
+  /// - 'id' -> doc.id,
+  /// - 'ref' -> doc.reference,
+  /// - 'attendanceConfirmed' -> valor booleano (si no existe, por defecto false).
   List<Map<String, dynamic>> _allReservations = [];
-  final Set<String> _confirmedCodes = {};
   bool _isLoading = true;
 
   late TabController _tabController;
@@ -33,7 +36,6 @@ class _ConfirmationBiqoeScreenState extends State<ConfirmationBiqoeScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _loadConfirmedCodes();
     _setupStream();
 
     _unconfirmedSearchController.addListener(() {
@@ -53,18 +55,8 @@ class _ConfirmationBiqoeScreenState extends State<ConfirmationBiqoeScreen>
     });
   }
 
-  Future<void> _loadConfirmedCodes() async {
-    final prefs = await SharedPreferences.getInstance();
-    final confirmed = prefs.getStringList('attendance_confirmed_codes') ?? [];
-    if (mounted) {
-      setState(() {
-        _confirmedCodes.addAll(confirmed.map((code) => code.toLowerCase()));
-      });
-    }
-  }
-
+  /// Escucha en tiempo real TODAS las reservas verificadas (sin filtrar por supplier).
   void _setupStream() {
-    // CAMBIO IMPORTANTE: Obtenemos TODAS las reservas sin filtrar por proveedor
     FirebaseFirestore.instance
         .collectionGroup('reservas')
         .where('estado', isEqualTo: 'verificado')
@@ -73,12 +65,23 @@ class _ConfirmationBiqoeScreenState extends State<ConfirmationBiqoeScreen>
       if (mounted) {
         setState(() {
           _allReservations = snapshot.docs.map((doc) {
-            final data = doc.data();
+            final data = Map<String, dynamic>.from(doc.data() as Map);
             data['id'] = doc.id;
+            data['ref'] = doc.reference;
+            if (!data.containsKey('attendanceConfirmed')) {
+              data['attendanceConfirmed'] = false;
+            }
             return data;
           }).toList();
           _isLoading = false;
         });
+      }
+    }, onError: (error) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al leer reservas: $error')),
+        );
       }
     });
   }
@@ -91,20 +94,35 @@ class _ConfirmationBiqoeScreenState extends State<ConfirmationBiqoeScreen>
     super.dispose();
   }
 
-  void _toggleConfirmation(String code) async {
-    final normalizedCode = code.toLowerCase();
+  /// Actualiza en Firestore el campo 'attendanceConfirmed'.
+  Future<void> _toggleConfirmation(dynamic ref, bool currentState) async {
+    final newState = !currentState;
+    try {
+      await ref.update({'attendanceConfirmed': newState});
 
-    setState(() {
-      if (_confirmedCodes.contains(normalizedCode)) {
-        _confirmedCodes.remove(normalizedCode);
-      } else {
-        _confirmedCodes.add(normalizedCode);
-      }
-    });
+      // Verifica si el widget sigue montado antes de usar context
+      if (!mounted) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(
-        'attendance_confirmed_codes', _confirmedCodes.toList());
+      // Optimista: actualizar la lista local para reflejar el cambio de inmediato
+      setState(() {
+        final idx = _allReservations.indexWhere((r) => r['ref'] == ref);
+        if (idx != -1) {
+          _allReservations[idx]['attendanceConfirmed'] = newState;
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              newState ? 'Asistencia confirmada' : 'Asistencia desconfirmada'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al actualizar: $e')),
+      );
+    }
   }
 
   Future<void> _scanQrCode(bool isConfirmedTab) async {
@@ -192,13 +210,14 @@ class _ConfirmationBiqoeScreenState extends State<ConfirmationBiqoeScreen>
 
   Widget _buildReservationListView({required bool isConfirmedList}) {
     final searchQuery =
-        isConfirmedList ? _confirmedSearchQuery : _unconfirmedSearchQuery;
+        (isConfirmedList ? _confirmedSearchQuery : _unconfirmedSearchQuery)
+            .toLowerCase();
 
     final filteredList = _allReservations.where((reserva) {
-      final reservaCode = reserva['code']?.toString() ?? '';
-      final normalizedCode = reservaCode.toLowerCase();
-      final isConfirmed = _confirmedCodes.contains(normalizedCode);
-      final matchesSearch = normalizedCode.contains(searchQuery.toLowerCase());
+      final reservaCode = (reserva['code']?.toString() ?? '').toLowerCase();
+      final isConfirmed = (reserva['attendanceConfirmed'] == true);
+      final matchesSearch =
+          searchQuery.isEmpty ? true : reservaCode.contains(searchQuery);
 
       return (isConfirmed == isConfirmedList) && matchesSearch;
     }).toList();
@@ -228,9 +247,9 @@ class _ConfirmationBiqoeScreenState extends State<ConfirmationBiqoeScreen>
 
   Widget _buildReservationCard(Map<String, dynamic> reservaData) {
     final reservaCode = reservaData['code']?.toString() ?? '';
-    final normalizedCode = reservaCode.toLowerCase();
-    final isConfirmed = _confirmedCodes.contains(normalizedCode);
+    final isConfirmed = (reservaData['attendanceConfirmed'] == true);
     final fechaCompra = _parseDate(reservaData['fecha']);
+    final dynamic ref = reservaData['ref'];
 
     return Card(
       color: Colors.white,
@@ -253,7 +272,7 @@ class _ConfirmationBiqoeScreenState extends State<ConfirmationBiqoeScreen>
             ..._buildPackageInfo(reservaData),
             ..._buildPaymentInfo(reservaData, fechaCompra),
             ..._buildUserInfo(reservaData),
-            // NUEVO: Mostramos el proveedor asociado
+            // Mostramos proveedor si está disponible
             if (reservaData['supplierName'] != null) ...[
               const SizedBox(height: 12),
               Text('Proveedor:',
@@ -266,11 +285,19 @@ class _ConfirmationBiqoeScreenState extends State<ConfirmationBiqoeScreen>
                       color: const Color.fromRGBO(17, 48, 73, 1),
                       fontSize: 14)),
             ],
+            const SizedBox(height: 12),
+            // Mostramos el código (útil en admin)
+            Text('Código: $reservaCode',
+                style: GoogleFonts.poppins(
+                    color: const Color.fromARGB(255, 3, 113, 10),
+                    fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             Align(
               alignment: Alignment.centerRight,
               child: ElevatedButton(
-                onPressed: () => _toggleConfirmation(reservaCode),
+                onPressed: ref == null
+                    ? null
+                    : () => _toggleConfirmation(ref, isConfirmed),
                 style: ElevatedButton.styleFrom(
                   backgroundColor:
                       isConfirmed ? Colors.red.shade400 : Colors.green.shade600,
@@ -383,19 +410,19 @@ class _ConfirmationBiqoeScreenState extends State<ConfirmationBiqoeScreen>
 
   List<Widget> _buildUserInfo(Map<String, dynamic> reservaData) {
     return [
-      if (reservaData['transactionCode']?.isNotEmpty ?? false)
+      if (reservaData['transactionCode']?.toString().isNotEmpty ?? false)
         Text('Referencia: ${reservaData['transactionCode']}',
             style: GoogleFonts.poppins(
                 color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
-      if (reservaData['cedula']?.isNotEmpty ?? false)
+      if (reservaData['cedula']?.toString().isNotEmpty ?? false)
         Text('Cédula: ${reservaData['cedula']}',
             style: GoogleFonts.poppins(
                 color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
-      if (reservaData['correo']?.isNotEmpty ?? false)
+      if (reservaData['correo']?.toString().isNotEmpty ?? false)
         Text('Correo: ${reservaData['correo']}',
             style: GoogleFonts.poppins(
                 color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
-      if (reservaData['numero']?.isNotEmpty ?? false)
+      if (reservaData['numero']?.toString().isNotEmpty ?? false)
         Text('Teléfono: ${reservaData['numero']}',
             style: GoogleFonts.poppins(
                 color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
@@ -405,15 +432,15 @@ class _ConfirmationBiqoeScreenState extends State<ConfirmationBiqoeScreen>
               color: const Color.fromRGBO(17, 48, 73, 1),
               fontSize: 14,
               fontWeight: FontWeight.bold)),
-      if (reservaData['name']?.isNotEmpty ?? false)
+      if (reservaData['name']?.toString().isNotEmpty ?? false)
         Text('Nombre: ${reservaData['name']}',
             style: GoogleFonts.poppins(
                 color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
-      if (reservaData['email']?.isNotEmpty ?? false)
+      if (reservaData['email']?.toString().isNotEmpty ?? false)
         Text('Email: ${reservaData['email']}',
             style: GoogleFonts.poppins(
                 color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
-      if (reservaData['celular']?.isNotEmpty ?? false)
+      if (reservaData['celular']?.toString().isNotEmpty ?? false)
         Text('Teléfono: ${reservaData['celular']}',
             style: GoogleFonts.poppins(
                 color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
@@ -434,7 +461,7 @@ class _ConfirmationBiqoeScreenState extends State<ConfirmationBiqoeScreen>
   String _formatTime(DateTime date) => DateFormat('hh:mm a').format(date);
 }
 
-// Mantenemos la misma pantalla de escáner QR
+// Mantenemos la misma pantalla de escáner QR (puedes moverla a un archivo común)
 class QRScannerScreen extends StatefulWidget {
   const QRScannerScreen({super.key});
 
@@ -471,7 +498,6 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
               setState(() => _isScanned = true);
               controller.stop();
 
-              // Solo cerramos el escáner, no la pantalla completa
               Navigator.pop(context, code);
             }
           }

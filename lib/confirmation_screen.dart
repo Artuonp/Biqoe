@@ -25,8 +25,11 @@ class _ConfirmationScreenState extends State<ConfirmationScreen>
   String _unconfirmedSearchQuery = '';
   String _confirmedSearchQuery = '';
 
+  // ignore: unintended_html_in_doc_comment
+  /// Listado en memoria de reservas (cada elemento es Map<String, dynamic>)
+  /// ahora incluye el DocumentReference en la clave 'ref' y el campo
+  /// 'attendanceConfirmed' proveniente de Firestore.
   List<Map<String, dynamic>> _allReservations = [];
-  final Set<String> _confirmedCodes = {};
   bool _isLoading = true;
 
   late TabController _tabController;
@@ -35,8 +38,14 @@ class _ConfirmationScreenState extends State<ConfirmationScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _loadConfirmedCodes();
+
+    // Escucha en tiempo real las reservas del proveedor
     _setupStream();
+
+    // (Opcional) si quieres migrar códigos locales guardados en SharedPreferences
+    // a Firestore, descomenta la siguiente línea o déjala activa para ejecutar
+    // la migración automáticamente una vez al iniciar.
+    _migrateLocalConfirmedCodesToFirestore();
 
     _unconfirmedSearchController.addListener(() {
       if (mounted) {
@@ -55,17 +64,7 @@ class _ConfirmationScreenState extends State<ConfirmationScreen>
     });
   }
 
-  Future<void> _loadConfirmedCodes() async {
-    final prefs = await SharedPreferences.getInstance();
-    final confirmed = prefs.getStringList('attendance_confirmed_codes') ?? [];
-    if (mounted) {
-      setState(() {
-        // Normalizar todos los códigos a minúsculas
-        _confirmedCodes.addAll(confirmed.map((code) => code.toLowerCase()));
-      });
-    }
-  }
-
+  /// --- STREAM: escucha 'reservas' en todas las subcolecciones (collectionGroup)
   void _setupStream() {
     final user = _auth.currentUser;
     if (user == null) {
@@ -82,12 +81,24 @@ class _ConfirmationScreenState extends State<ConfirmationScreen>
       if (mounted) {
         setState(() {
           _allReservations = snapshot.docs.map((doc) {
-            final data = doc.data();
-            data['id'] = doc.id; // Guardamos el ID del documento
+            final data = Map<String, dynamic>.from(doc.data() as Map);
+            data['id'] = doc.id; // ID del documento
+            data['ref'] = doc.reference; // DocumentReference para updates
+            // Aseguramos que exista la clave attendanceConfirmed (por si es null)
+            if (!data.containsKey('attendanceConfirmed')) {
+              data['attendanceConfirmed'] = false;
+            }
             return data;
           }).toList();
           _isLoading = false;
         });
+      }
+    }, onError: (error) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al leer reservas: $error')),
+        );
       }
     });
   }
@@ -100,22 +111,41 @@ class _ConfirmationScreenState extends State<ConfirmationScreen>
     super.dispose();
   }
 
-  void _toggleConfirmation(String code) async {
-    final normalizedCode = code.toLowerCase();
+  /// Actualiza en Firestore el campo `attendanceConfirmed` del documento.
+  Future<void> _toggleConfirmation(
+      DocumentReference ref, bool currentState) async {
+    final newState = !currentState;
+    try {
+      // Actualiza en Firestore — esto se replicará a todos los dispositivos.
+      await ref.update({'attendanceConfirmed': newState});
 
-    setState(() {
-      if (_confirmedCodes.contains(normalizedCode)) {
-        _confirmedCodes.remove(normalizedCode);
-      } else {
-        _confirmedCodes.add(normalizedCode);
-      }
-    });
+      // Verifica si el widget sigue montado antes de usar context
+      if (!mounted) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(
-        'attendance_confirmed_codes', _confirmedCodes.toList());
+      // Opcional: actualización optimista local para que la UI responda de inmediato
+      setState(() {
+        final idx = _allReservations.indexWhere((r) => r['ref'] == ref);
+        if (idx != -1) {
+          _allReservations[idx]['attendanceConfirmed'] = newState;
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            newState ? 'Asistencia confirmada' : 'Asistencia desconfirmada',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al actualizar: $e')),
+      );
+    }
   }
 
+  /// Escanea un QR y coloca el resultado en la barra de búsqueda correspondiente.
   Future<void> _scanQrCode(bool isConfirmedTab) async {
     final result = await Navigator.push<String>(
       context,
@@ -201,13 +231,15 @@ class _ConfirmationScreenState extends State<ConfirmationScreen>
 
   Widget _buildReservationListView({required bool isConfirmedList}) {
     final searchQuery =
-        isConfirmedList ? _confirmedSearchQuery : _unconfirmedSearchQuery;
+        (isConfirmedList ? _confirmedSearchQuery : _unconfirmedSearchQuery)
+            .toLowerCase();
 
+    // Filtramos leyendo el campo 'attendanceConfirmed' desde cada reserva
     final filteredList = _allReservations.where((reserva) {
-      final reservaCode = reserva['code']?.toString() ?? '';
-      final normalizedCode = reservaCode.toLowerCase();
-      final isConfirmed = _confirmedCodes.contains(normalizedCode);
-      final matchesSearch = normalizedCode.contains(searchQuery.toLowerCase());
+      final reservaCode = (reserva['code']?.toString() ?? '').toLowerCase();
+      final isConfirmed = (reserva['attendanceConfirmed'] == true);
+      final matchesSearch =
+          searchQuery.isEmpty ? true : reservaCode.contains(searchQuery);
 
       return (isConfirmed == isConfirmedList) && matchesSearch;
     }).toList();
@@ -236,10 +268,10 @@ class _ConfirmationScreenState extends State<ConfirmationScreen>
   }
 
   Widget _buildReservationCard(Map<String, dynamic> reservaData) {
-    final reservaCode = reservaData['code']?.toString() ?? '';
-    final normalizedCode = reservaCode.toLowerCase();
-    final isConfirmed = _confirmedCodes.contains(normalizedCode);
+    final isConfirmed = (reservaData['attendanceConfirmed'] == true);
     final fechaCompra = _parseDate(reservaData['fecha']);
+    final dynamic ref =
+        reservaData['ref']; // DocumentReference (puede ser null)
 
     return Card(
       color: Colors.white,
@@ -266,7 +298,9 @@ class _ConfirmationScreenState extends State<ConfirmationScreen>
             Align(
               alignment: Alignment.centerRight,
               child: ElevatedButton(
-                onPressed: () => _toggleConfirmation(reservaCode),
+                onPressed: ref == null
+                    ? null
+                    : () => _toggleConfirmation(ref, isConfirmed),
                 style: ElevatedButton.styleFrom(
                   backgroundColor:
                       isConfirmed ? Colors.red.shade400 : Colors.green.shade600,
@@ -379,19 +413,19 @@ class _ConfirmationScreenState extends State<ConfirmationScreen>
 
   List<Widget> _buildUserInfo(Map<String, dynamic> reservaData) {
     return [
-      if (reservaData['transactionCode']?.isNotEmpty ?? false)
+      if (reservaData['transactionCode']?.toString().isNotEmpty ?? false)
         Text('Referencia: ${reservaData['transactionCode']}',
             style: GoogleFonts.poppins(
                 color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
-      if (reservaData['cedula']?.isNotEmpty ?? false)
+      if (reservaData['cedula']?.toString().isNotEmpty ?? false)
         Text('Cédula: ${reservaData['cedula']}',
             style: GoogleFonts.poppins(
                 color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
-      if (reservaData['correo']?.isNotEmpty ?? false)
+      if (reservaData['correo']?.toString().isNotEmpty ?? false)
         Text('Correo: ${reservaData['correo']}',
             style: GoogleFonts.poppins(
                 color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
-      if (reservaData['numero']?.isNotEmpty ?? false)
+      if (reservaData['numero']?.toString().isNotEmpty ?? false)
         Text('Teléfono: ${reservaData['numero']}',
             style: GoogleFonts.poppins(
                 color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
@@ -401,15 +435,15 @@ class _ConfirmationScreenState extends State<ConfirmationScreen>
               color: const Color.fromRGBO(17, 48, 73, 1),
               fontSize: 14,
               fontWeight: FontWeight.bold)),
-      if (reservaData['name']?.isNotEmpty ?? false)
+      if (reservaData['name']?.toString().isNotEmpty ?? false)
         Text('Nombre: ${reservaData['name']}',
             style: GoogleFonts.poppins(
                 color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
-      if (reservaData['email']?.isNotEmpty ?? false)
+      if (reservaData['email']?.toString().isNotEmpty ?? false)
         Text('Email: ${reservaData['email']}',
             style: GoogleFonts.poppins(
                 color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
-      if (reservaData['celular']?.isNotEmpty ?? false)
+      if (reservaData['celular']?.toString().isNotEmpty ?? false)
         Text('Teléfono: ${reservaData['celular']}',
             style: GoogleFonts.poppins(
                 color: const Color.fromRGBO(17, 48, 73, 1), fontSize: 14)),
@@ -428,6 +462,52 @@ class _ConfirmationScreenState extends State<ConfirmationScreen>
 
   String _formatDate(DateTime date) => DateFormat('dd/MM/yyyy').format(date);
   String _formatTime(DateTime date) => DateFormat('hh:mm a').format(date);
+
+  // -------------------------------------------------------------------
+  // Migración opcional de SharedPreferences -> Firestore
+  // -------------------------------------------------------------------
+  ///
+  /// Si en versiones anteriores guardaste códigos localmente en
+  /// 'attendance_confirmed_codes', esta función los busca y actualiza
+  /// el campo 'attendanceConfirmed' en los documentos que correspondan
+  /// al proveedor actualmente autenticado.
+  Future<void> _migrateLocalConfirmedCodesToFirestore() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final confirmed = prefs.getStringList('attendance_confirmed_codes') ?? [];
+      if (confirmed.isEmpty) return;
+
+      final userId = _auth.currentUser?.uid;
+      if (userId == null) return;
+
+      for (final code in confirmed) {
+        final query = await FirebaseFirestore.instance
+            .collectionGroup('reservas')
+            .where('code', isEqualTo: code)
+            .get();
+
+        for (final doc in query.docs) {
+          final data = doc.data();
+          if (data['supplier'] == userId) {
+            await doc.reference.update({'attendanceConfirmed': true});
+          }
+        }
+      }
+
+      await prefs.remove('attendance_confirmed_codes');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Migración de confirmaciones completada')));
+      }
+    } catch (e) {
+      // Si falla la migración, no bloqueamos la app: solo notificamos.
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error en migración: $e')));
+      }
+    }
+  }
 }
 
 // =======================================================================
@@ -469,7 +549,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
               setState(() => _isScanned = true);
               controller.stop();
 
-              // Solo cerramos el escáner, no la pantalla completa
+              // Devolvemos el código a la pantalla anterior
               Navigator.pop(context, code);
             }
           }

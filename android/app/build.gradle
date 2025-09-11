@@ -20,12 +20,12 @@ if (localPropertiesFile.exists()) {
 
 def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
 if (flutterVersionCode == null) {
-    flutterVersionCode = '41'
+    flutterVersionCode = '42'
 }
 
 def flutterVersionName = localProperties.getProperty('flutter.versionName')
 if (flutterVersionName == null) {
-    flutterVersionName = '4.0.0'
+    flutterVersionName = '5.0.0'
 }
 
 // Definición única de keystoreProperties y keystorePropertiesFile
@@ -38,8 +38,8 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace 'com.biqoe.app' // <-- AGREGA ESTA LÍNEA COMO LA PRIMERA DENTRO DEL BLOQUE android
 
-    compileSdk 35
-    compileSdkVersion 35
+    compileSdk 36
+    compileSdkVersion 36
 
    compileOptions {
     sourceCompatibility JavaVersion.VERSION_1_8
@@ -58,7 +58,7 @@ android {
     defaultConfig {
         applicationId "com.biqoe.app"
         minSdkVersion 25
-        targetSdkVersion 35
+        targetSdkVersion 36
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         multiDexEnabled true
