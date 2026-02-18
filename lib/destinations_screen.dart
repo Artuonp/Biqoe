@@ -2,20 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'filter_screen.dart';
-import 'destination_detail_screen.dart';
-import 'search_screen.dart';
-import 'bookings_screen.dart';
-import 'saved_destinations_screen.dart';
-import 'settings_screen.dart';
 import 'package:hugeicons/hugeicons.dart';
+import 'package:go_router/go_router.dart';
+import 'dart:ui'; // Para BackdropFilter
+
+import 'filter_screen.dart';
 
 class DestinationsScreen extends StatefulWidget {
   final String userId;
   final List<String> destinations;
   final List<String> initialCategories;
   final String initialLocation;
-  final int sortOption; // <-- Cambia aquí
+  final int sortOption;
   final String searchText;
 
   const DestinationsScreen({
@@ -24,7 +22,7 @@ class DestinationsScreen extends StatefulWidget {
     required this.destinations,
     required this.initialCategories,
     required this.initialLocation,
-    required this.sortOption, // <-- Cambia aquí
+    required this.sortOption,
     required this.searchText,
   });
 
@@ -36,12 +34,15 @@ class DestinationsScreenState extends State<DestinationsScreen> {
   late List<String> selectedCategories;
   List<QueryDocumentSnapshot>? _displayedDestinations;
   late String selectedLocation;
-  late int sortOption; // <-- Cambia aquí
+  late int sortOption;
   final TextEditingController _searchController = TextEditingController();
   String _searchText = '';
   late Box<Map> savedDestinationsBox;
   Set<String> savedDestinationIds = {};
   late final ScrollController _scrollController;
+
+  final Color primaryColor = const Color.fromRGBO(17, 48, 73, 1);
+  final Color backgroundColor = const Color(0xFFF3F7FE);
 
   @override
   void initState() {
@@ -49,7 +50,7 @@ class DestinationsScreenState extends State<DestinationsScreen> {
     _scrollController = ScrollController();
     selectedCategories = widget.initialCategories;
     selectedLocation = widget.initialLocation;
-    sortOption = widget.sortOption; // <-- Cambia aquí
+    sortOption = widget.sortOption;
     _searchText = widget.searchText;
     _searchController.text = widget.searchText;
     _searchController.addListener(() {
@@ -59,10 +60,12 @@ class DestinationsScreenState extends State<DestinationsScreen> {
     });
 
     Hive.openBox<Map>('saved_destinations_${widget.userId}').then((box) {
-      setState(() {
-        savedDestinationsBox = box;
-        savedDestinationIds = box.keys.cast<String>().toSet();
-      });
+      if (mounted) {
+        setState(() {
+          savedDestinationsBox = box;
+          savedDestinationIds = box.keys.cast<String>().toSet();
+        });
+      }
     });
   }
 
@@ -100,47 +103,61 @@ class DestinationsScreenState extends State<DestinationsScreen> {
     });
   }
 
-  void toggleSaveDestination(
-      String destinationId, Map<String, dynamic> destination) {
-    final userBoxName = 'saved_destinations_${widget.userId}';
-    Hive.openBox<Map>(userBoxName).then((userBox) {
-      if (isDestinationSaved(destinationId, userBox)) {
-        userBox.delete(destinationId);
-        savedDestinationIds.remove(destinationId);
-      } else {
-        userBox.put(destinationId, destination);
-        savedDestinationIds.add(destinationId);
-      }
-      // No llames a setState aquí
-    });
-  }
-
   bool isDestinationSaved(String destinationId, Box<Map> userBox) {
     return userBox.keys.contains(destinationId);
   }
 
   double _getMinPrice(List<dynamic> paquetes) {
     if (paquetes.isEmpty) return 0.0;
-
     final precios = paquetes
         .where((p) => p['precio'] != null)
         .map<double>((p) => (p['precio'] as num).toDouble())
         .toList();
-
     return precios.isNotEmpty ? precios.reduce((a, b) => a < b ? a : b) : 0.0;
   }
 
-  List<String> _normalizeImages(dynamic imageField) {
-    if (imageField == null) {
-      return []; // Si no hay imágenes, retorna una lista vacía
-    } else if (imageField is String) {
-      return [imageField]; // Si es un String, lo convierte en una lista
-    } else if (imageField is List<dynamic>) {
-      return imageField
-          .cast<String>(); // Si es una lista, la convierte a List<String>
-    } else {
-      return []; // Si es otro tipo, retorna una lista vacía
+  // --- LÓGICA DE EXTRACCIÓN DE IMÁGENES ---
+  List<String> _extractImages(Map<String, dynamic> data, String id) {
+    List<String> images = [];
+
+    // 1. Intento: Campo 'imagenes' (Array Real - Formato Nuevo)
+    if (data['imagenes'] != null && data['imagenes'] is List) {
+      images = List<String>.from(data['imagenes'])
+          .where((e) => e.isNotEmpty)
+          .toList();
     }
+
+    // 2. Intento: Campo 'imagen' (Formato Antiguo o String Sucio)
+    if (images.isEmpty && data['imagen'] != null) {
+      var rawImg = data['imagen'];
+
+      if (rawImg is List) {
+        images = List<String>.from(rawImg);
+      } else if (rawImg is String) {
+        String imgStr = rawImg;
+        // Limpieza de caracteres basura
+        String cleaned = imgStr
+            .replaceAll('[', '')
+            .replaceAll(']', '')
+            .replaceAll('"', '')
+            .replaceAll("'", "");
+
+        if (cleaned.contains(',')) {
+          // Lista en string
+          images = cleaned
+              .split(',')
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList();
+        } else {
+          // Una sola URL
+          if (cleaned.trim().isNotEmpty) {
+            images = [cleaned.trim()];
+          }
+        }
+      }
+    }
+    return images;
   }
 
   @override
@@ -148,85 +165,45 @@ class DestinationsScreenState extends State<DestinationsScreen> {
     _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
-  } // Código existente
+  }
 
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
 
+    // --- LÓGICA RESPONSIVA ---
+    // Si el ancho es mayor a 900px, consideramos que es Desktop/Web grande
+    final bool isDesktop = screenWidth > 900;
+
     return Scaffold(
-      backgroundColor: const Color.fromARGB(255, 243, 247, 254),
-      appBar: PreferredSize(
-        preferredSize: Size.fromHeight(screenHeight * 0.15),
-        child: AppBar(
-          automaticallyImplyLeading: false,
-          backgroundColor: const Color.fromARGB(255, 243, 247, 254),
-          elevation: 0,
-          flexibleSpace: SafeArea(
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.04),
+      backgroundColor: backgroundColor,
+      // ELIMINADO APPBAR ESTÁNDAR, USAMOS SAFEAREA + COLUMN PARA HEADER PERSONALIZADO
+      body: SafeArea(
+        child: Column(
+          children: [
+            // --- HEADER PERSONALIZADO ---
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                  screenWidth * 0.05, 20, screenWidth * 0.05, 15),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back,
-                        color: Colors.black, size: 25),
-                    onPressed: () {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => SearchScreen(
-                            destinations: widget.destinations,
-                            userId: widget.userId,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  SizedBox(height: screenHeight * 0.0001),
+                  // Fila Superior: Título "Explora" + Botón Filtro
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Expanded(
-                        child: Container(
-                          height: screenHeight * 0.06,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            border: Border.all(color: Colors.grey),
-                            borderRadius:
-                                BorderRadius.circular(screenWidth * 0.08),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _searchController,
-                                  decoration: const InputDecoration(
-                                    hintText: 'Encuentra un nuevo plan',
-                                    border: InputBorder.none,
-                                    contentPadding:
-                                        EdgeInsets.fromLTRB(16, 0, 8, 0),
-                                    hintStyle: TextStyle(
-                                        color: Colors.grey,
-                                        fontFamily: 'Poppins'),
-                                  ),
-                                  style: const TextStyle(
-                                      color: Colors.grey,
-                                      fontFamily: 'Poppins'),
-                                ),
-                              ),
-                              const Padding(
-                                padding: EdgeInsets.only(right: 8.0),
-                                child: Icon(Icons.search, color: Colors.grey),
-                              ),
-                            ],
-                          ),
+                      const Text(
+                        "Explora",
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: Color.fromRGBO(17, 48, 73, 1),
                         ),
                       ),
-                      SizedBox(width: screenWidth * 0.02),
-                      IconButton(
-                        icon: const Icon(Icons.tune, color: Colors.grey),
-                        onPressed: () async {
+                      InkWell(
+                        onTap: () async {
                           final filters = await Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -250,20 +227,85 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                             );
                           }
                         },
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.05),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(Icons.tune_rounded,
+                              color: Color.fromRGBO(17, 48, 73, 1), size: 24),
+                        ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Barra de Búsqueda
+                  Container(
+                    height: 55,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color.fromRGBO(17, 48, 73, 0.08),
+                          blurRadius: 15,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        // Botón de Atrás
+                        IconButton(
+                          icon: Icon(Icons.arrow_back,
+                              color: Colors.grey.shade400),
+                          onPressed: () => context.pop(),
+                        ),
+
+                        Expanded(
+                          child: TextField(
+                            controller: _searchController,
+                            decoration: InputDecoration(
+                              hintText: 'Encuentra tu próximo destino',
+                              hintStyle: TextStyle(
+                                fontFamily: 'Poppins',
+                                color: Colors.grey.shade400,
+                                fontSize: 15,
+                              ),
+                              border: InputBorder.none,
+                              contentPadding:
+                                  const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              color: Color.fromRGBO(17, 48, 73, 1),
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.only(right: 30.0),
+                          child: Icon(HugeIcons.strokeRoundedSearch01,
+                              color: Colors.grey, size: 24),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-          ),
-        ),
-      ),
-      body: Padding(
-        padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.04),
-        child: Column(
-          children: [
-            SizedBox(height: screenHeight * 0.02),
+
+            // --- LISTA DE DESTINOS (RESPONSIVA) ---
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
@@ -277,6 +319,7 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                   }
 
                   if (snapshot.hasError) {
+                    debugPrint("Error Stream: ${snapshot.error}");
                     return const Center(
                       child: Text('Error al cargar los destinos',
                           style: TextStyle(fontFamily: 'Poppins')),
@@ -297,7 +340,7 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                     final data = doc.data() as Map<String, dynamic>;
                     final categories =
                         data['categorias'] as List<dynamic>? ?? [];
-                    final location = data['ubicacion'] ?? 'Todas';
+                    final location = data['estado'] ?? 'Todas';
                     final name = data['nombre'] ?? '';
 
                     final matchesCategory =
@@ -314,24 +357,22 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                         matchesSearchText;
                   }).toList();
 
-                  // Mezclar los destinos en un orden aleatorio
+                  // Logica de ordenamiento
                   if (sortOption == 0) {
                     destinations.shuffle();
                   } else if (sortOption == 1) {
                     destinations.sort((a, b) {
                       final aData = a.data() as Map<String, dynamic>;
                       final bData = b.data() as Map<String, dynamic>;
-                      final aPrice = _getMinPrice(aData['paquetes'] ?? []);
-                      final bPrice = _getMinPrice(bData['paquetes'] ?? []);
-                      return aPrice.compareTo(bPrice);
+                      return _getMinPrice(aData['paquetes'] ?? [])
+                          .compareTo(_getMinPrice(bData['paquetes'] ?? []));
                     });
                   } else if (sortOption == 2) {
                     destinations.sort((a, b) {
                       final aData = a.data() as Map<String, dynamic>;
                       final bData = b.data() as Map<String, dynamic>;
-                      final aPrice = _getMinPrice(aData['paquetes'] ?? []);
-                      final bPrice = _getMinPrice(bData['paquetes'] ?? []);
-                      return bPrice.compareTo(aPrice);
+                      return _getMinPrice(bData['paquetes'] ?? [])
+                          .compareTo(_getMinPrice(aData['paquetes'] ?? []));
                     });
                   }
 
@@ -340,49 +381,55 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       _updateDisplayedDestinations(destinations);
                     });
-                    return const Center(); // Espera a que se actualice la lista
+                    if (_displayedDestinations == null) {
+                      return const Center();
+                    }
                   }
 
-                  return ListView.builder(
-                    controller: _scrollController, // <-- Agrega esto
-                    itemCount: _displayedDestinations!.length,
-                    itemBuilder: (context, index) {
-                      final destination = _displayedDestinations![index];
-                      final data =
-                          destination.data() as Map<String, dynamic>? ?? {};
-                      final paquetes = data['paquetes'] as List<dynamic>? ?? [];
-                      final minPrice = _getMinPrice(paquetes);
-                      final destinationId = destination.id;
-                      final isSaved = isDestinationSaved(
-                          destinationId, savedDestinationsBox);
+                  // -----------------------------------------------------------
+                  // AQUÍ ESTÁ EL CAMBIO RESPONSIVO
+                  // -----------------------------------------------------------
 
-                      return Padding(
-                        padding: EdgeInsets.only(bottom: screenHeight * 0.02),
-                        child: GestureDetector(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => DestinationDetailScreen(
-                                  destino: data,
-                                  userId: widget.userId,
-                                ),
-                              ),
-                            );
-                          },
-                          child: DestinationCard(
-                            images: _normalizeImages(data['imagen']),
-                            title: data['nombre'] ?? '',
-                            location: data['ubicacion'] ?? '',
-                            place: data['lugar'] ?? 'Lugar no disponible',
-                            price: minPrice,
-                            screenWidth: screenWidth,
-                            isSaved: isSaved,
-                            userId: widget.userId,
-                            destinationId: destinationId,
-                            data: data,
-                          ),
-                        ),
+                  // CASO: DESKTOP / WEB (GRID VIEW)
+                  if (isDesktop) {
+                    return GridView.builder(
+                      controller: _scrollController,
+                      padding: EdgeInsets.fromLTRB(
+                          screenWidth * 0.05, 0, screenWidth * 0.05, 20),
+                      gridDelegate:
+                          const SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: 400, // Ancho máximo de la tarjeta
+                        childAspectRatio:
+                            0.85, // Relación de aspecto para que no se vea estirada
+                        crossAxisSpacing: 20,
+                        mainAxisSpacing: 20,
+                      ),
+                      itemCount: _displayedDestinations!.length,
+                      itemBuilder: (context, index) {
+                        // Usamos el builder de items común
+                        return _buildDestinationItem(
+                          _displayedDestinations![index],
+                          screenWidth,
+                          screenHeight,
+                          isDesktop:
+                              true, // Flag para indicar que estamos en desktop
+                        );
+                      },
+                    );
+                  }
+
+                  // CASO: MÓVIL (LIST VIEW ORIGINAL)
+                  return ListView.builder(
+                    controller: _scrollController,
+                    itemCount: _displayedDestinations!.length,
+                    padding: EdgeInsets.fromLTRB(
+                        screenWidth * 0.05, 0, screenWidth * 0.05, 20),
+                    itemBuilder: (context, index) {
+                      return _buildDestinationItem(
+                        _displayedDestinations![index],
+                        screenWidth,
+                        screenHeight,
+                        isDesktop: false,
                       );
                     },
                   );
@@ -405,46 +452,20 @@ class DestinationsScreenState extends State<DestinationsScreen> {
           unselectedItemColor: const Color.fromRGBO(17, 48, 73, 1),
           showSelectedLabels: false,
           showUnselectedLabels: false,
+          currentIndex: 0,
           onTap: (index) {
             switch (index) {
               case 0:
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SearchScreen(
-                      destinations: widget.destinations,
-                      userId: widget.userId,
-                    ),
-                  ),
-                );
+                context.go('/');
                 break;
               case 1:
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => BookingsScreen(userId: widget.userId),
-                  ),
-                );
+                context.go('/bookings');
                 break;
               case 2:
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) =>
-                        SavedDestinationsScreen(userId: widget.userId),
-                  ),
-                );
+                context.go('/saved');
                 break;
               case 3:
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SettingsScreen(
-                      userId: widget.userId,
-                      savedDestinations: const [],
-                    ),
-                  ),
-                );
+                context.go('/settings');
                 break;
             }
           },
@@ -486,10 +507,60 @@ class DestinationsScreenState extends State<DestinationsScreen> {
       ),
     );
   }
+
+  // --- MÉTODO HELPER PARA CONSTRUIR LA TARJETA ---
+  // Esto evita repetir código entre ListView y GridView
+  Widget _buildDestinationItem(QueryDocumentSnapshot destination,
+      double screenWidth, double screenHeight,
+      {required bool isDesktop}) {
+    final data = destination.data() as Map<String, dynamic>? ?? {};
+    final paquetes = data['paquetes'] as List<dynamic>? ?? [];
+    final minPrice = _getMinPrice(paquetes);
+    final destinationId = destination.id;
+    final isSaved = isDestinationSaved(destinationId, savedDestinationsBox);
+    final images = _extractImages(data, destinationId);
+
+    // Si es Desktop, usamos un LayoutBuilder para que la tarjeta use el ancho de su celda, no de la pantalla
+    // Si es Móvil, usamos el padding original
+
+    Widget card = LayoutBuilder(builder: (context, constraints) {
+      // En desktop, 'screenWidth' para la tarjeta será el ancho de la celda (constraints.maxWidth)
+      // En móvil, sigue siendo el ancho de pantalla.
+      final cardWidth = isDesktop ? constraints.maxWidth : screenWidth;
+
+      return DestinationCard(
+        images: images,
+        title: data['nombre'] ?? '',
+        location: data['estado'] ?? '',
+        place: data['lugar'] ?? 'Lugar no disponible',
+        price: minPrice,
+        screenWidth: cardWidth, // <--- AQUÍ ESTÁ EL TRUCO
+        isSaved: isSaved,
+        userId: widget.userId,
+        destinationId: destinationId,
+        data: data,
+        onTap: () {
+          // CORRECCIÓN: Agregar ID al mapa data antes de enviar
+          data['id'] = destinationId;
+
+          context.push('/d/$destinationId', extra: data);
+        },
+      );
+    });
+
+    if (isDesktop) {
+      return card; // En GridView no necesitamos Padding inferior extra, el grid lo maneja con mainAxisSpacing
+    } else {
+      return Padding(
+        padding: EdgeInsets.only(bottom: screenHeight * 0.025),
+        child: card,
+      );
+    }
+  }
 }
 
 class DestinationCard extends StatefulWidget {
-  final List<dynamic> images;
+  final List<String> images;
   final String title;
   final String location;
   final String place;
@@ -499,6 +570,7 @@ class DestinationCard extends StatefulWidget {
   final String userId;
   final String destinationId;
   final Map<String, dynamic> data;
+  final VoidCallback onTap;
 
   const DestinationCard({
     super.key,
@@ -512,6 +584,7 @@ class DestinationCard extends StatefulWidget {
     required this.userId,
     required this.destinationId,
     required this.data,
+    required this.onTap,
   });
 
   @override
@@ -538,180 +611,265 @@ class _DestinationCardState extends State<DestinationCard> {
 
   @override
   Widget build(BuildContext context) {
+    // Definimos una altura fija proporcional
+    final cardHeight = widget.screenWidth * 0.7;
+
     return SizedBox(
-      height: widget.screenWidth * 0.7,
-      width: widget.screenWidth * 0.7,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(widget.screenWidth * 0.05),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => DestinationDetailScreen(
-                  destino: widget.data,
-                  userId: widget.userId,
+      height: cardHeight,
+      width: widget.screenWidth,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 15,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Stack(
+            children: [
+              // 1. Carrusel de Imágenes
+              Positioned.fill(
+                child: widget.images.isNotEmpty
+                    ? PageView.builder(
+                        controller: pageController,
+                        itemCount: widget.images.length,
+                        onPageChanged: (index) {
+                          setState(() {
+                            currentPage = index;
+                          });
+                        },
+                        itemBuilder: (context, index) {
+                          return GestureDetector(
+                            onTap: widget.onTap,
+                            child: CachedNetworkImage(
+                              imageUrl: widget.images[index],
+                              fit: BoxFit.cover,
+                              placeholder: (context, url) => Container(
+                                color: Colors.grey[200],
+                                child: const Center(),
+                              ),
+                              errorWidget: (context, url, error) {
+                                return Container(
+                                  color: Colors.grey[200],
+                                  child: const Icon(Icons.broken_image,
+                                      color: Colors.grey),
+                                );
+                              },
+                            ),
+                          );
+                        },
+                      )
+                    : GestureDetector(
+                        onTap: widget.onTap,
+                        child: Container(
+                          color: Colors.grey[300],
+                          child: const Center(child: Text('Sin imágenes')),
+                        ),
+                      ),
+              ),
+
+              // 2. Gradiente
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.2),
+                          Colors.black.withValues(alpha: 0.7),
+                          Colors.black.withValues(alpha: 0.9),
+                        ],
+                        stops: const [0.0, 0.4, 0.6, 0.85, 1.0],
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            );
-          },
-          child: Card(
-            clipBehavior: Clip.antiAlias,
-            elevation: 4.0, // sombra
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(widget.screenWidth * 0.05),
-            ),
-            child: Stack(
-              children: [
-                // Carrusel de imágenes
-                if (widget.images.isNotEmpty)
-                  PageView.builder(
-                    controller: pageController,
-                    itemCount: widget.images.length,
-                    onPageChanged: (index) {
-                      setState(() {
-                        currentPage = index;
-                      });
-                    },
-                    itemBuilder: (context, index) {
-                      return CachedNetworkImage(
-                        imageUrl: widget.images[index],
-                        fit: BoxFit.cover,
-                        placeholder: (context, url) => Container(
-                          color: Colors.grey[200],
-                          child: const Center(),
-                        ),
-                        errorWidget: (context, url, error) =>
-                            const Icon(Icons.error),
-                      );
-                    },
-                  )
-                else
-                  Container(
-                    color: Colors.grey[200],
-                    child: const Center(child: Text('Sin imágenes')),
-                  ),
 
-                // Indicadores de posición
-                if (widget.images.length > 1)
-                  Positioned(
-                    bottom: widget.screenWidth * 0.02,
-                    left: 0,
-                    right: 0,
+              // 3. Indicadores de posición
+              if (widget.images.length > 1)
+                Positioned(
+                  top: 20,
+                  left: 20,
+                  child: IgnorePointer(
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
                       children: List.generate(widget.images.length, (index) {
-                        return Container(
-                          width: widget.screenWidth * 0.02,
-                          height: widget.screenWidth * 0.02,
-                          margin: EdgeInsets.symmetric(
-                              horizontal: widget.screenWidth * 0.01),
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          margin: const EdgeInsets.only(right: 6),
+                          width: currentPage == index ? 20 : 6,
+                          height: 6,
                           decoration: BoxDecoration(
-                            shape: BoxShape.circle,
                             color: currentPage == index
                                 ? Colors.white
-                                : const Color.fromARGB(100, 255, 255, 255),
+                                : Colors.white.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(4),
                           ),
                         );
                       }),
                     ),
                   ),
+                ),
 
-                // Botón de favorito
-                Positioned(
-                  top: widget.screenWidth * 0.025,
-                  right: widget.screenWidth * 0.025,
-                  child: GestureDetector(
-                    onTap: () async {
-                      final userBoxName = 'saved_destinations_${widget.userId}';
-                      final userBox = await Hive.openBox<Map>(userBoxName);
-                      if (localIsSaved) {
-                        await userBox.delete(widget.destinationId);
-                      } else {
-                        await userBox.put(widget.destinationId, widget.data);
-                      }
-                      setState(() {
-                        localIsSaved = !localIsSaved;
-                      });
-                    },
-                    child: Container(
-                      width: widget.screenWidth * 0.08,
-                      height: widget.screenWidth * 0.08,
-                      decoration: const BoxDecoration(
-                        color: Color.fromARGB(100, 17, 48, 73),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        localIsSaved ? Icons.favorite : Icons.favorite_border,
-                        color: Colors.white,
-                        size: widget.screenWidth * 0.05,
+              // 4. Botón de favorito
+              Positioned(
+                top: 16,
+                right: 16,
+                child: GestureDetector(
+                  onTap: () async {
+                    final userBoxName = 'saved_destinations_${widget.userId}';
+                    final userBox = await Hive.openBox<Map>(userBoxName);
+                    if (localIsSaved) {
+                      await userBox.delete(widget.destinationId);
+                    } else {
+                      await userBox.put(widget.destinationId, widget.data);
+                    }
+                    setState(() {
+                      localIsSaved = !localIsSaved;
+                    });
+                  },
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(50),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.2),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.2),
+                              width: 1),
+                        ),
+                        child: Center(
+                          child: Icon(
+                            localIsSaved
+                                ? Icons.favorite
+                                : Icons.favorite_border_rounded,
+                            color: localIsSaved
+                                ? const Color.fromARGB(255, 255, 255, 255)
+                                : Colors.white,
+                            size: 22,
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
+              ),
 
-                // Información del destino
-                Positioned(
-                  bottom: widget.screenWidth * 0.05,
-                  left: widget.screenWidth * 0.075,
-                  right: widget.screenWidth * 0.075,
-                  child: Container(
-                    padding: EdgeInsets.all(widget.screenWidth * 0.05),
-                    decoration: BoxDecoration(
-                      color: const Color.fromARGB(100, 17, 48, 73),
-                      borderRadius:
-                          BorderRadius.circular(widget.screenWidth * 0.05),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          widget.title,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: widget.screenWidth * 0.04,
-                            fontWeight: FontWeight.bold,
-                            fontFamily: 'Poppins',
+              // 5. Información del destino
+              Positioned(
+                bottom: 20,
+                left: 20,
+                right: 20,
+                child: GestureDetector(
+                  onTap: widget.onTap,
+                  behavior: HitTestBehavior.translucent,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (widget.place.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.1)),
+                          ),
+                          child: Text(
+                            widget.place.toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                              fontFamily: 'Poppins',
+                            ),
                           ),
                         ),
-                        SizedBox(height: widget.screenWidth * 0.01),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.location_on,
-                                    color: Colors.white,
-                                    size: widget.screenWidth * 0.035),
-                                SizedBox(width: widget.screenWidth * 0.01),
-                                Text(
-                                  '${widget.location}, ${widget.place}',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: widget.screenWidth * 0.03,
-                                    fontFamily: 'Poppins',
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Text(
-                              '€${widget.price.toStringAsFixed(2)}',
-                              style: TextStyle(
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              widget.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: widget.screenWidth * 0.03,
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                height: 1.2,
+                                fontFamily: 'Poppins',
+                                shadows: [
+                                  Shadow(
+                                    offset: Offset(0, 1),
+                                    blurRadius: 4,
+                                    color: Colors.black45,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '€${widget.price.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                color: Color.fromRGBO(17, 48, 73, 1),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
                                 fontFamily: 'Poppins',
                               ),
                             ),
-                          ],
-                        ),
-                      ],
-                    ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(HugeIcons.strokeRoundedLocation01,
+                              color: Colors.white70, size: 16),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              widget.location,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w400,
+                                fontFamily: 'Poppins',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

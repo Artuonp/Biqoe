@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'search_screen.dart';
-import 'destination_detail_screen.dart';
-import 'bookings_screen.dart';
-import 'settings_screen.dart';
 import 'package:hugeicons/hugeicons.dart';
+import 'package:go_router/go_router.dart';
+import 'dart:ui';
+
+const Color kPrimaryColor = Color.fromRGBO(17, 48, 73, 1);
+const Color kBackgroundColor = Color(0xFFF3F7FE);
 
 class SavedDestinationsScreen extends StatefulWidget {
   final String userId;
@@ -26,13 +26,7 @@ class SavedDestinationsScreenState extends State<SavedDestinationsScreen> {
   @override
   void initState() {
     super.initState();
-    Hive.openBox<Map>('saved_destinations_${widget.userId}').then((box) {
-      setState(() {
-        savedDestinationsBox = box;
-        isLoading = false;
-      });
-    });
-
+    _initHive();
     _searchController.addListener(() {
       setState(() {
         _searchText = _searchController.text;
@@ -40,15 +34,62 @@ class SavedDestinationsScreenState extends State<SavedDestinationsScreen> {
     });
   }
 
+  Future<void> _initHive() async {
+    final box = await Hive.openBox<Map>('saved_destinations_${widget.userId}');
+    if (mounted) {
+      setState(() {
+        savedDestinationsBox = box;
+        isLoading = false;
+      });
+    }
+  }
+
   double _getMinPrice(List<dynamic> paquetes) {
     if (paquetes.isEmpty) return 0.0;
-
     final precios = paquetes
         .where((p) => p['precio'] != null)
         .map<double>((p) => (p['precio'] as num).toDouble())
         .toList();
-
     return precios.isNotEmpty ? precios.reduce((a, b) => a < b ? a : b) : 0.0;
+  }
+
+  List<String> _extractImages(Map<dynamic, dynamic> rawData) {
+    List<String> images = [];
+    final data = rawData.map((k, v) => MapEntry(k.toString(), v));
+
+    try {
+      if (data['imagenes'] != null && data['imagenes'] is List) {
+        List<dynamic> rawList = data['imagenes'];
+        images = rawList
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+      }
+      if (images.isEmpty && data['imagen'] != null) {
+        var rawImg = data['imagen'];
+        if (rawImg is List) {
+          images = rawImg.map((e) => e.toString().trim()).toList();
+        } else if (rawImg is String) {
+          String cleaned = rawImg
+              .replaceAll('[', '')
+              .replaceAll(']', '')
+              .replaceAll('"', '')
+              .replaceAll("'", "");
+          if (cleaned.contains(',')) {
+            images = cleaned
+                .split(',')
+                .map((e) => e.trim())
+                .where((e) => e.isNotEmpty)
+                .toList();
+          } else if (cleaned.trim().isNotEmpty) {
+            images = [cleaned.trim()];
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error extrayendo imágenes: $e");
+    }
+    return images;
   }
 
   @override
@@ -60,150 +101,158 @@ class SavedDestinationsScreenState extends State<SavedDestinationsScreen> {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
 
     if (isLoading) {
-      return Scaffold(
-        appBar: AppBar(
-          backgroundColor: const Color.fromARGB(255, 243, 247, 254),
-        ),
-        body: const Center(
-          child: CircularProgressIndicator(),
-        ),
+      return const Scaffold(
+        backgroundColor: kBackgroundColor,
+        body: Center(),
       );
     }
 
-    return PopScope(
-      canPop: false,
-      child: Scaffold(
-        body: Column(
+    return Scaffold(
+      backgroundColor: kBackgroundColor,
+      body: SafeArea(
+        child: Column(
           children: [
+            // --- HEADER CENTRADO ---
             Padding(
-              padding: EdgeInsets.only(
-                top: screenHeight * 0.08,
-                left: screenWidth * 0.04,
-                right: screenWidth * 0.04,
-              ),
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.04),
-                height: screenHeight * 0.06,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(screenWidth * 0.08),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.search, color: Colors.grey),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        decoration: const InputDecoration(
-                          hintText: 'Buscar planes guardados',
-                          border: InputBorder.none,
-                          hintStyle: TextStyle(
-                            color: Colors.grey,
-                            fontFamily: 'Poppins',
-                          ),
-                        ),
-                        style: GoogleFonts.poppins(),
+              padding: EdgeInsets.fromLTRB(
+                  screenWidth * 0.05, 10, screenWidth * 0.05, 15),
+              child: Column(
+                children: [
+                  const Center(
+                    child: Text(
+                      "Guardados",
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 25,
+                        fontWeight: FontWeight.bold,
+                        color: kPrimaryColor,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 10),
+                  // Barra de Búsqueda
+                  Container(
+                    height: 55,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color.fromRGBO(17, 48, 73, 0.08),
+                          blurRadius: 15,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 16),
+                        Icon(HugeIcons.strokeRoundedSearch01,
+                            color: Colors.grey.shade400, size: 24),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _searchController,
+                            decoration: InputDecoration(
+                              hintText: 'Busca en tus guardados',
+                              hintStyle: TextStyle(
+                                fontFamily: 'Poppins',
+                                color: Colors.grey.shade400,
+                                fontSize: 15,
+                              ),
+                              border: InputBorder.none,
+                              contentPadding:
+                                  const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              color: kPrimaryColor,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-            SizedBox(
-                height: screenHeight *
-                    0.00), // Espacio entre la barra de búsqueda y el primer destino guardado
+
+            // --- LISTA DE FAVORITOS (ValueListenable para actualizar al borrar) ---
             Expanded(
               child: ValueListenableBuilder(
                 valueListenable: savedDestinationsBox.listenable(),
                 builder: (context, Box<Map> box, _) {
-                  final savedDestinations = box.values.where((destination) {
-                    final name = destination['nombre'] ?? '';
+                  final allDestinations = box.toMap().entries.toList();
+
+                  // Filtro de búsqueda local
+                  final filteredDestinations = allDestinations.where((entry) {
+                    final data = entry.value;
+                    final name = data['nombre'] ?? '';
                     return _searchText.isEmpty ||
                         name.toLowerCase().contains(_searchText.toLowerCase());
                   }).toList();
 
-                  if (savedDestinations.isEmpty) {
-                    return const Center(
-                      child: Text(
-                        'No hay planes guardados',
-                        style: TextStyle(
-                            fontSize: 18.0,
-                            color: Color.fromRGBO(17, 48, 73, 1),
-                            fontFamily: 'Poppins'),
+                  if (filteredDestinations.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(HugeIcons.strokeRoundedFavourite,
+                              size: 50, color: Colors.grey[300]),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'No tienes guardados',
+                            style: TextStyle(
+                              fontSize: 16.0,
+                              color: Colors.grey,
+                              fontFamily: 'Poppins',
+                            ),
+                          ),
+                        ],
                       ),
                     );
                   }
 
-                  return ListView.builder(
-                    itemCount: savedDestinations.length,
+                  return ListView.separated(
+                    padding: EdgeInsets.symmetric(
+                        horizontal: screenWidth * 0.05, vertical: 10),
+                    itemCount: filteredDestinations.length,
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 20),
                     itemBuilder: (context, index) {
-                      final destination = savedDestinations[index];
+                      final entry = filteredDestinations[index];
+                      final key = entry.key;
+                      final rawData = entry.value;
 
-                      // Convertir Map<dynamic, dynamic> a Map<String, dynamic>
-                      final Map<String, dynamic> destinationMap = destination
-                          .map((key, value) => MapEntry(key.toString(), value));
+                      final Map<String, dynamic> data =
+                          rawData.map((k, v) => MapEntry(k.toString(), v));
 
-// Conversión recursiva para 'paquetes'
-                      if (destinationMap.containsKey('paquetes') &&
-                          destinationMap['paquetes'] is List) {
-                        final paquetes = destinationMap['paquetes'] as List;
-                        destinationMap['paquetes'] = paquetes.map((e) {
-                          if (e is Map) {
-                            return Map<String, dynamic>.from(e);
-                          }
-                          return e;
-                        }).toList();
+                      if (!data.containsKey('id')) {
+                        data['id'] = key.toString();
                       }
 
-                      return Padding(
-                        padding: EdgeInsets.symmetric(
-                          vertical: screenHeight *
-                              0.01, // Espacio entre los recuadros
-                          horizontal: screenWidth * 0.05, // Espacio a los lados
-                        ),
-                        child: GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => DestinationDetailScreen(
-                                    destino: destinationMap,
-                                    userId: widget.userId,
-                                  ),
-                                ),
-                              );
-                            },
-                            child: _buildDestinationCard(
-                              images: (destinationMap['imagen'] is List)
-                                  ? (destinationMap['imagen'] as List<dynamic>)
-                                      .cast<String>()
-                                  : [
-                                      destinationMap['imagen']?.toString() ?? ''
-                                    ],
-                              title: destinationMap['nombre'] ??
-                                  'Nombre no disponible',
-                              location: destinationMap['ubicacion'] ??
-                                  'Ubicación no disponible',
-                              place:
-                                  destinationMap['lugar'] ?? '', // Nuevo campo
-                              price: (destinationMap['paquetes'] != null &&
-                                      (destinationMap['paquetes'] as List)
-                                          .isNotEmpty)
-                                  ? _getMinPrice(destinationMap['paquetes'])
-                                  : 0.0, // Asegúrate de que sea un double
-                              screenWidth: screenWidth,
-                              isSaved: true,
-                              onFavoriteTap: () {
-                                setState(() {
-                                  savedDestinationsBox.deleteAt(index);
-                                });
-                              },
-                            )),
+                      final paquetes = data['paquetes'] as List<dynamic>? ?? [];
+                      final minPrice = _getMinPrice(paquetes);
+                      final images = _extractImages(rawData);
+
+                      return DestinationCard(
+                        images: images,
+                        title: data['nombre'] ?? 'Sin nombre',
+                        location: data['ubicacion'] ?? 'Desconocida',
+                        place: data['lugar'] ?? '',
+                        price: minPrice,
+                        screenWidth: screenWidth,
+                        isSaved: true,
+                        onFavoriteTap: () {
+                          // Borra inmediatamente de Hive
+                          savedDestinationsBox.delete(key);
+                        },
+                        onTap: () {
+                          context.push('/d/${data['id']}', extra: data);
+                        },
                       );
                     },
                   );
@@ -212,263 +261,278 @@ class SavedDestinationsScreenState extends State<SavedDestinationsScreen> {
             ),
           ],
         ),
-        bottomNavigationBar: ClipRRect(
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(30),
-            topRight: Radius.circular(30),
-          ),
-          child: BottomNavigationBar(
-            type: BottomNavigationBarType.fixed,
-            backgroundColor: Colors.white,
-            elevation: 0,
-            selectedItemColor: const Color.fromRGBO(17, 48, 73, 1),
-            unselectedItemColor: const Color.fromRGBO(17, 48, 73, 1),
-            showSelectedLabels: false,
-            showUnselectedLabels: false,
-            onTap: (index) {
-              switch (index) {
-                case 0:
-                  Navigator.pushReplacement(
-                    context,
-                    PageRouteBuilder(
-                      pageBuilder: (_, __, ___) => SearchScreen(
-                        destinations: const [],
-                        userId: widget.userId,
-                      ),
-                      transitionsBuilder: (_, a, __, c) => FadeTransition(
-                        opacity: a,
-                        child: c,
-                      ),
-                      transitionDuration: const Duration(milliseconds: 600),
-                    ),
-                  );
-                  break;
-                case 1:
-                  Navigator.pushReplacement(
-                    context,
-                    PageRouteBuilder(
-                      pageBuilder: (_, __, ___) => BookingsScreen(
-                        userId: widget.userId,
-                      ),
-                      transitionsBuilder: (_, a, __, c) => FadeTransition(
-                        opacity: a,
-                        child: c,
-                      ),
-                      transitionDuration: const Duration(milliseconds: 600),
-                    ),
-                  );
-                  break;
-                case 2:
-                  // Ya estamos en SavedDestinationsScreen, no necesita navegación
-                  break;
-                case 3:
-                  Navigator.pushReplacement(
-                    context,
-                    PageRouteBuilder(
-                      pageBuilder: (_, __, ___) => SettingsScreen(
-                        userId: widget.userId,
-                        savedDestinations: const [],
-                      ),
-                      transitionsBuilder: (_, a, __, c) => FadeTransition(
-                        opacity: a,
-                        child: c,
-                      ),
-                      transitionDuration: const Duration(milliseconds: 600),
-                    ),
-                  );
-                  break;
-              }
-            },
-            items: [
-              BottomNavigationBarItem(
-                icon: HugeIcon(
-                  icon: HugeIcons.strokeRoundedHome02,
-                  color: Color.fromRGBO(17, 48, 73, 1),
-                  size: 24.0,
-                ),
-                label: 'Buscar',
-              ),
-              BottomNavigationBarItem(
-                icon: HugeIcon(
-                  icon: HugeIcons.strokeRoundedTicket03,
-                  color: Color.fromRGBO(17, 48, 73, 1),
-                  size: 24.0,
-                ),
-                label: 'Booked',
-              ),
-              BottomNavigationBarItem(
-                icon: HugeIcon(
-                  icon: HugeIcons.strokeRoundedFavourite,
-                  color: Color.fromRGBO(240, 169, 52, 1),
-                  size: 24.0,
-                ),
-                label: 'Saved',
-              ),
-              BottomNavigationBarItem(
-                icon: HugeIcon(
-                  icon: HugeIcons.strokeRoundedSettings01,
-                  color: Color.fromRGBO(17, 48, 73, 1),
-                  size: 24.0,
-                ),
-                label: 'Configuración',
-              ),
-            ],
-          ),
-        ),
-        backgroundColor: const Color.fromARGB(255, 243, 247, 254),
       ),
     );
   }
+}
 
-  Widget _buildDestinationCard({
-    required List<String> images, // Cambiar de String a List<String>
-    required String title,
-    required String location,
-    required String place, // Nuevo parámetro
-    required double price,
-    required double screenWidth,
-    required bool isSaved,
-    required VoidCallback onFavoriteTap,
-  }) {
-    final PageController pageController = PageController();
-    int currentPage = 0;
+// DestinationCard DEBE SER IGUAL A LA DE DESTINATIONS_SCREEN
+class DestinationCard extends StatefulWidget {
+  final List<String> images;
+  final String title;
+  final String location;
+  final String place;
+  final double price;
+  final double screenWidth;
+  final bool isSaved;
+  final VoidCallback onFavoriteTap;
+  final VoidCallback onTap;
 
-    return StatefulBuilder(
-      builder: (context, setState) {
-        return Container(
-          width: screenWidth * 0.8, // Ajustar el ancho del recuadro
-          constraints: BoxConstraints(
-            minHeight:
-                screenWidth * 0.45, // Ajustar la altura mínima del recuadro
-            maxHeight:
-                screenWidth * 0.6, // Ajustar la altura máxima del recuadro
-          ),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(screenWidth * 0.05),
-          ),
+  const DestinationCard({
+    super.key,
+    required this.images,
+    required this.title,
+    required this.location,
+    required this.place,
+    required this.price,
+    required this.screenWidth,
+    required this.isSaved,
+    required this.onFavoriteTap,
+    required this.onTap,
+  });
+
+  @override
+  State<DestinationCard> createState() => _DestinationCardState();
+}
+
+class _DestinationCardState extends State<DestinationCard> {
+  late PageController pageController;
+  int currentPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cardHeight = widget.screenWidth * 0.7;
+
+    return SizedBox(
+      height: cardHeight,
+      width: widget.screenWidth,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 15,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
           child: Stack(
             children: [
-              // Carrusel de imágenes
-              ClipRRect(
-                borderRadius: BorderRadius.circular(screenWidth * 0.05),
-                child: PageView.builder(
-                  controller: pageController,
-                  itemCount: images.length,
-                  onPageChanged: (index) => setState(() => currentPage = index),
-                  itemBuilder: (context, index) {
-                    return CachedNetworkImage(
-                      imageUrl: images[index],
-                      fit: BoxFit.cover,
-                      placeholder: (context, url) => Container(
-                        color: Colors.grey[200],
+              Positioned.fill(
+                child: widget.images.isNotEmpty
+                    ? PageView.builder(
+                        controller: pageController,
+                        itemCount: widget.images.length,
+                        onPageChanged: (index) =>
+                            setState(() => currentPage = index),
+                        itemBuilder: (context, index) {
+                          return GestureDetector(
+                            onTap: widget.onTap,
+                            child: CachedNetworkImage(
+                              imageUrl: widget.images[index],
+                              fit: BoxFit.cover,
+                              placeholder: (context, url) => Container(
+                                  color: Colors.grey[200],
+                                  child: const Center()),
+                              errorWidget: (context, url, error) => Container(
+                                  color: Colors.grey[200],
+                                  child: const Icon(Icons.broken_image,
+                                      color: Colors.grey)),
+                            ),
+                          );
+                        },
+                      )
+                    : GestureDetector(
+                        onTap: widget.onTap,
+                        child: Container(
+                            color: Colors.grey[300],
+                            child: const Center(
+                                child: Icon(Icons.image_not_supported,
+                                    color: Colors.grey))),
                       ),
-                      errorWidget: (context, url, error) =>
-                          const Icon(Icons.error),
-                    );
-                  },
-                ),
               ),
-
-              // Indicadores de página
-              if (images.length > 1)
-                Positioned(
-                  bottom: screenWidth * 0.017,
-                  left: 0,
-                  right: 0,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(images.length, (index) {
-                      return Container(
-                        width: screenWidth * 0.02,
-                        height: screenWidth * 0.02,
-                        margin: EdgeInsets.symmetric(
-                            horizontal: screenWidth * 0.01),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: currentPage == index
-                              ? Colors.white
-                              : const Color.fromARGB(100, 255, 255, 255),
-                        ),
-                      );
-                    }),
-                  ),
-                ),
-
-              // Ícono de favorito
-              Positioned(
-                top: screenWidth * 0.025,
-                right: screenWidth * 0.025,
-                child: GestureDetector(
-                  onTap: onFavoriteTap,
-                  child: Container(
-                    width: screenWidth * 0.08,
-                    height: screenWidth * 0.08,
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: const Color.fromARGB(70, 17, 48, 73),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      isSaved ? Icons.favorite : Icons.favorite_border,
-                      color: Colors.white,
-                      size: screenWidth * 0.05,
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.2),
+                          Colors.black.withValues(alpha: 0.7),
+                          Colors.black.withValues(alpha: 0.9),
+                        ],
+                        stops: const [0.0, 0.4, 0.6, 0.85, 1.0],
+                      ),
                     ),
                   ),
                 ),
               ),
-
-              // Recuadro inferior
-              Positioned(
-                bottom: screenWidth * 0.05,
-                left: screenWidth * 0.075,
-                right: screenWidth * 0.075,
-                child: Container(
-                  padding: EdgeInsets.all(screenWidth * 0.05),
-                  decoration: BoxDecoration(
-                    color: const Color.fromARGB(100, 17, 48, 73),
-                    borderRadius: BorderRadius.circular(screenWidth * 0.05),
+              if (widget.images.length > 1)
+                Positioned(
+                  top: 20,
+                  left: 20,
+                  child: IgnorePointer(
+                    child: Row(
+                      children: List.generate(widget.images.length, (index) {
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          margin: const EdgeInsets.only(right: 6),
+                          width: currentPage == index ? 20 : 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: currentPage == index
+                                ? Colors.white
+                                : Colors.white.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        );
+                      }),
+                    ),
                   ),
+                ),
+              Positioned(
+                top: 16,
+                right: 16,
+                child: GestureDetector(
+                  onTap: widget.onFavoriteTap,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(50),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.2),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                              color: const Color.fromARGB(255, 255, 255, 255)
+                                  .withValues(alpha: 0.2),
+                              width: 1),
+                        ),
+                        child: Center(
+                          child: Icon(
+                            Icons
+                                .favorite, // Siempre lleno porque es la lista de favoritos
+                            color: const Color.fromARGB(255, 255, 255, 255),
+                            size: 22,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 20,
+                left: 20,
+                right: 20,
+                child: GestureDetector(
+                  onTap: widget.onTap,
+                  behavior: HitTestBehavior.translucent,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: screenWidth * 0.04,
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'Poppins',
-                        ),
-                      ),
-                      SizedBox(height: screenWidth * 0.01),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.location_on,
-                                color: Colors.white,
-                                size: screenWidth * 0.035,
-                              ),
-                              SizedBox(width: screenWidth * 0.01),
-                              Text(
-                                // Mostrar ubicación y lugar
-                                '$location${place.isNotEmpty ? ', $place' : ''}',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: screenWidth * 0.03,
-                                  fontFamily: 'Poppins',
-                                ),
-                              ),
-                            ],
+                      if (widget.place.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.1)),
                           ),
-                          Text(
-                            '€$price',
-                            style: TextStyle(
+                          child: Text(
+                            widget.place.toUpperCase(),
+                            style: const TextStyle(
                               color: Colors.white,
-                              fontSize: screenWidth * 0.03,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
                               fontFamily: 'Poppins',
+                            ),
+                          ),
+                        ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              widget.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                height: 1.2,
+                                fontFamily: 'Poppins',
+                                shadows: [
+                                  Shadow(
+                                      offset: Offset(0, 1),
+                                      blurRadius: 4,
+                                      color: Colors.black45)
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '€${widget.price.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                color: Color.fromRGBO(17, 48, 73, 1),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                fontFamily: 'Poppins',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(HugeIcons.strokeRoundedLocation01,
+                              color: Colors.white70, size: 16),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              widget.location,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w400,
+                                fontFamily: 'Poppins',
+                              ),
                             ),
                           ),
                         ],
@@ -479,8 +543,8 @@ class SavedDestinationsScreenState extends State<SavedDestinationsScreen> {
               ),
             ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

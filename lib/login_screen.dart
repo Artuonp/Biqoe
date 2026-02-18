@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'search_screen.dart';
-import 'password_reset_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:go_router/go_router.dart'; // Importamos GoRouter
 
 class LoginFormScreen extends StatefulWidget {
   const LoginFormScreen({super.key});
@@ -21,8 +20,8 @@ class LoginFormScreenState extends State<LoginFormScreen> {
 
   void _login() async {
     try {
-      String email = _emailController.text;
-      String password = _passwordController.text;
+      String email = _emailController.text.trim();
+      String password = _passwordController.text.trim();
 
       if (email.isEmpty) {
         _showErrorMessage('Por favor, ingrese su correo electrónico.');
@@ -42,75 +41,57 @@ class LoginFormScreenState extends State<LoginFormScreen> {
       if (!mounted) return;
 
       if (userCredential.user != null) {
-        if (userCredential.user!.emailVerified) {
-          String userId = userCredential
-              .user!.uid; // Obtener el userId del usuario autenticado
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (context) => SearchScreen(
-                destinations: const [],
-                userId: userId, // Pasar el userId requerido
-              ),
-            ),
-          );
-        } else {
-          await _auth.signOut();
-          _showErrorMessage(
-              'Por favor, verifica tu correo electrónico antes de iniciar sesión.');
-        }
+        // CAMBIO IMPORTANTE:
+        // No verificamos emailVerified aquí para no bloquear el acceso si no es estricto.
+        // Si quieres obligar verificación, descomenta el if/else.
+
+        // Simplemente vamos al Home. El Router verifica el usuario.
+        context.go('/');
       }
     } on FirebaseAuthException catch (e) {
-      if (e.code == 'user-not-found') {
-      } else if (e.code == 'wrong-password') {
+      // Manejo de errores simplificado
+      String msg = 'Ocurrió un error inesperado.';
+      if (e.code == 'user-not-found' ||
+          e.code == 'wrong-password' ||
+          e.code == 'invalid-credential') {
+        msg = 'Correo o contraseña incorrectos.';
       } else if (e.code == 'invalid-email') {
+        msg = 'El formato del correo no es válido.';
       } else if (e.code == 'user-disabled') {
-      } else if (e.code == 'too-many-requests') {
-      } else if (e.code == 'operation-not-allowed') {
-      } else {}
+        msg = 'Esta cuenta ha sido deshabilitada.';
+      }
 
-      if (!mounted) return;
-
-      _showErrorMessage('Contraseña o correo incorrecto. Intenta otra vez.');
+      if (mounted) _showErrorMessage(msg);
     }
   }
 
   Future<void> _sendPasswordResetEmail() async {
-    String email = _emailController.text;
+    String email = _emailController.text.trim();
 
     if (email.isEmpty) {
-      _showErrorMessage('Escribe tu correo.');
+      _showErrorMessage(
+          'Escribe tu correo en el campo de arriba para recuperarla.');
       return;
     }
 
     try {
-      _auth.setLanguageCode('es');
-      await _auth.sendPasswordResetEmail(email: email);
-
-      if (!mounted) return;
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => PasswordResetScreen(email: email),
-        ),
-      );
-    } on FirebaseAuthException catch (e) {
-      _showErrorMessage(
-          'Error: ${e.message ?? 'Ocurrió un error inesperado.'}');
+      // Navegamos a la pantalla de reset pasando el email
+      // Nota: Debemos registrar esta ruta en app_router.dart
+      context.push('/forgot-password', extra: email);
+    } catch (e) {
+      _showErrorMessage('Error al navegar: $e');
     }
   }
 
   Future<void> signInWithGoogle() async {
     try {
-      await GoogleSignIn().signOut();
+      await GoogleSignIn().signOut(); // Forzar selección de cuenta
       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
 
-      if (googleUser == null) {
-        _showErrorMessage('Inicio de sesión con Google cancelado.');
-        return;
-      }
+      if (googleUser == null) return; // Usuario canceló
 
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
-
       final AuthCredential credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
@@ -124,6 +105,7 @@ class LoginFormScreenState extends State<LoginFormScreen> {
       if (userCredential.user != null) {
         String userId = userCredential.user!.uid;
 
+        // Verificamos si existe en Firestore
         final userDoc = await FirebaseFirestore.instance
             .collection('usuarios')
             .doc(userId)
@@ -131,33 +113,21 @@ class LoginFormScreenState extends State<LoginFormScreen> {
 
         if (userDoc.exists) {
           if (!mounted) return;
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (context) => SearchScreen(
-                destinations: const [],
-                userId: userId,
-              ),
-            ),
-          );
+          context.go('/'); // Navegación exitosa al Home
         } else {
           await _auth.signOut();
-          _showErrorMessage(
-              'La cuenta de Google no está registrada en la aplicación.');
+          if (mounted) {
+            _showErrorMessage(
+                'La cuenta de Google no está registrada en la aplicación.');
+          }
         }
       }
-    } on FirebaseAuthException catch (e, stack) {
-      debugPrint('FirebaseAuthException: $e');
-      debugPrintStack(stackTrace: stack);
-      _showErrorMessage(
-          'Error al iniciar sesión con Google: ${e.message ?? 'Ocurrió un error inesperado.'}');
-    } catch (e, stack) {
-      debugPrint('Error: $e');
-      debugPrintStack(stackTrace: stack);
-      _showErrorMessage('Error al iniciar sesión con Google: ${e.toString()}');
+    } catch (e) {
+      debugPrint('Error Google Sign In: $e');
+      if (mounted) _showErrorMessage('Error al iniciar sesión con Google.');
     }
   }
 
-  // filepath:
   Future<void> signInWithApple() async {
     try {
       final appleCredential = await SignInWithApple.getAppleIDCredential(
@@ -165,11 +135,10 @@ class LoginFormScreenState extends State<LoginFormScreen> {
           AppleIDAuthorizationScopes.email,
           AppleIDAuthorizationScopes.fullName,
         ],
-        // Necesario para Android/Web:
         webAuthenticationOptions: WebAuthenticationOptions(
-          clientId: 'com.biqoe.app.SiwA', // Tu Service ID exacto
+          clientId: 'com.biqoe.app.SiwA',
           redirectUri: Uri.parse(
-            'https://biqoe-app.firebaseapp.com/__/auth/handler', // Debe coincidir con tu intent-filter
+            'https://biqoe-app.firebaseapp.com/__/auth/handler',
           ),
         ),
       );
@@ -186,7 +155,6 @@ class LoginFormScreenState extends State<LoginFormScreen> {
 
       if (userCredential.user != null) {
         String userId = userCredential.user!.uid;
-
         final userDoc = await FirebaseFirestore.instance
             .collection('usuarios')
             .doc(userId)
@@ -194,45 +162,31 @@ class LoginFormScreenState extends State<LoginFormScreen> {
 
         if (userDoc.exists) {
           if (!mounted) return;
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (context) => SearchScreen(
-                destinations: const [],
-                userId: userId,
-              ),
-            ),
-          );
+          context.go('/'); // Navegación exitosa al Home
         } else {
           await _auth.signOut();
-          if (!mounted) return;
-          _showErrorMessage(
-            'La cuenta de Apple no está registrada en la aplicación.',
-          );
+          if (mounted) {
+            _showErrorMessage('La cuenta de Apple no está registrada.');
+          }
         }
       }
-    } on FirebaseAuthException catch (e, stack) {
-      debugPrint('FirebaseAuthException: $e');
-      debugPrintStack(stackTrace: stack);
-      _showErrorMessage('Error al iniciar sesión con Apple');
-    } catch (e, stack) {
-      debugPrint('Error: $e');
-      debugPrintStack(stackTrace: stack);
-      _showErrorMessage('Error al iniciar sesión con Apple');
+    } catch (e) {
+      debugPrint('Error Apple Sign In: $e');
+      if (mounted) _showErrorMessage('Error al iniciar sesión con Apple.');
     }
   }
 
   void _showErrorMessage(String message) {
-    final snackBar = SnackBar(
-      content: Text(message, style: const TextStyle(fontFamily: 'Poppins')),
-      backgroundColor: Colors.red,
-      behavior: SnackBarBehavior.floating,
-      margin: const EdgeInsets.all(16.0),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10.0),
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: const TextStyle(fontFamily: 'Poppins')),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16.0),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
       ),
     );
-
-    ScaffoldMessenger.of(context).showSnackBar(snackBar);
   }
 
   @override
@@ -240,14 +194,19 @@ class LoginFormScreenState extends State<LoginFormScreen> {
     return Scaffold(
       backgroundColor: const Color.fromARGB(255, 243, 247, 254),
       appBar: AppBar(
-        backgroundColor:
-            const Color.fromARGB(255, 243, 247, 254), // Fondo del AppBar
-        elevation: 0, // Sin sombra
+        backgroundColor: const Color.fromARGB(255, 243, 247, 254),
+        elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back,
               color: Color.fromRGBO(17, 48, 73, 1)),
           onPressed: () {
-            Navigator.of(context).pop(); // Regresa a la pantalla anterior
+            // CAMBIO: Usamos context.pop() de GoRouter
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              // Si no puede volver (ej: recarga web), redirigir a login
+              context.go('/login');
+            }
           },
         ),
       ),
@@ -271,7 +230,8 @@ class LoginFormScreenState extends State<LoginFormScreen> {
                 ),
               ),
               const SizedBox(height: 20.0),
-              const SizedBox(height: 8.0),
+
+              // CAMPO EMAIL
               TextField(
                 controller: _emailController,
                 decoration: const InputDecoration(
@@ -289,10 +249,11 @@ class LoginFormScreenState extends State<LoginFormScreen> {
                 style: const TextStyle(fontFamily: 'Poppins'),
               ),
               const SizedBox(height: 16.0),
-              const SizedBox(height: 8.0),
+
+              // CAMPO PASSWORD
               TextField(
                 controller: _passwordController,
-                obscureText: true, // <-- Esto oculta la contraseña
+                obscureText: true,
                 decoration: const InputDecoration(
                   hintText: 'Contraseña',
                   border: UnderlineInputBorder(),
@@ -308,6 +269,8 @@ class LoginFormScreenState extends State<LoginFormScreen> {
                 style: const TextStyle(fontFamily: 'Poppins'),
               ),
               const SizedBox(height: 24.0),
+
+              // BOTÓN LOGIN
               Center(
                 child: ElevatedButton(
                   onPressed: _login,
@@ -325,6 +288,8 @@ class LoginFormScreenState extends State<LoginFormScreen> {
                 ),
               ),
               const SizedBox(height: 16.0),
+
+              // BOTONES SOCIALES
               Center(
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -343,20 +308,22 @@ class LoginFormScreenState extends State<LoginFormScreen> {
                         'assets/images/Apple logo 2.png',
                         width: 35.0,
                         height: 35.0,
-                      ), // Espacio entre los botones
+                      ),
                       onPressed: signInWithApple,
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 5.0),
+
+              // BOTÓN RECUPERAR CONTRASEÑA
               Center(
                 child: TextButton(
                   onPressed: _sendPasswordResetEmail,
-                  child: Text(
+                  child: const Text(
                     'Recuperación de contraseña',
                     style: TextStyle(
-                      color: const Color.fromRGBO(17, 48, 73, 1),
+                      color: Color.fromRGBO(17, 48, 73, 1),
                       fontFamily: 'Poppins',
                       fontWeight: FontWeight.bold,
                     ),

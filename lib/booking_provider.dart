@@ -8,6 +8,7 @@ class BookingProvider extends ChangeNotifier {
   final Map<String, List<Map<String, dynamic>>> _userBookings = {};
   final Logger logger = Logger();
 
+  // --- GETTERS ---
   List<Map<String, dynamic>> getPendingBookings(String userId) {
     return _userBookings[userId]
             ?.where((booking) => booking['estado'] == 'pendiente')
@@ -22,17 +23,22 @@ class BookingProvider extends ChangeNotifier {
         [];
   }
 
+  // --- CARGAR RESERVAS ---
   Future<void> loadBookings(String userId) async {
     try {
+      // Buscamos en 'reservaciones/{supplierId}/reservas' usando collectionGroup
       QuerySnapshot pendingSnapshot = await _firestore
           .collectionGroup('reservas')
           .where('userId', isEqualTo: userId)
           .where('estado', isEqualTo: 'pendiente')
+          .orderBy('createdAt', descending: true)
           .get();
+
       QuerySnapshot verifiedSnapshot = await _firestore
           .collectionGroup('reservas')
           .where('userId', isEqualTo: userId)
           .where('estado', isEqualTo: 'verificado')
+          .orderBy('createdAt', descending: true)
           .get();
 
       if (userId.isNotEmpty) {
@@ -44,33 +50,54 @@ class BookingProvider extends ChangeNotifier {
 
       notifyListeners();
     } catch (e) {
-      logger.i('Error al cargar las reservas: $e');
+      logger.e('Error al cargar las reservas: $e');
     }
   }
 
-  // MODIFICADO: Ahora mapea correctamente los nuevos tipos de paquetes desde Firestore.
+  // --- MAPEO DE DATOS (LECTURA) ---
   Map<String, dynamic> _mapBookingDoc(QueryDocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     return {
       'id': doc.id,
       'planName': data['planName'],
+      'planLocation': data['planLocation'],
+      'googleMapsLink': data['googleMapsLink'],
+      'supplier': data['supplier'],
+
+      // Datos Financieros
       'totalPriceBs': data['totalPriceBs'],
+      'amountPaid':
+          (data['amountPaid'] ?? data['totalPrice'] ?? 0.0).toDouble(),
+      'totalPlanPrice':
+          (data['totalPlanPrice'] ?? data['totalPrice'] ?? 0.0).toDouble(),
+      'isInstallment': data['isInstallment'] ?? false,
+      'installmentsPaid': data['installmentsPaid'] ?? 0,
+      'paymentStatus': data['paymentStatus'] ?? 'completed',
+
+      // HISTORIAL DE PAGOS
+      'paymentHistory': data['paymentHistory'] ?? [],
+
+      // Datos Contacto
       'name': data['name'],
       'email': data['email'],
       'celular': data['celular'],
-      'planLocation': data['planLocation'],
-      'planPrice': data['totalPrice'],
+
+      // Datos de Referencia (Último estado)
       'transactionCode': data['transactionCode'],
       'receipt': data['receipt'],
-      'fecha': data['fecha'],
-      'estado': data['estado'],
-      'supplier': data['supplier'],
       'paymentMethod': data['paymentMethod'],
-      'code': data['code'],
       'cedula': data['cedula'],
       'numero': data['numero'],
       'correo': data['correo'],
-      'packages': (data['packages'] as List<dynamic>).map((pkg) {
+
+      // Meta
+      'fecha': data['fecha'],
+      'createdAt': data['createdAt'],
+      'estado': data['estado'],
+      'code': data['code'],
+
+      // Paquetes
+      'packages': (data['packages'] as List<dynamic>? ?? []).map((pkg) {
         if (pkg is! Map<String, dynamic>) return {};
 
         final bookingType = pkg['tipoDeReserva'] ?? 'Reserva';
@@ -94,7 +121,7 @@ class BookingProvider extends ChangeNotifier {
     };
   }
 
-  // MODIFICADO: El método addBooking ahora es dinámico y guarda los datos correctos para cada tipo de paquete.
+  // --- AGREGAR RESERVA INICIAL (ESCRITURA) ---
   Future<void> addBooking({
     required String userId,
     required String planName,
@@ -103,45 +130,88 @@ class BookingProvider extends ChangeNotifier {
     required String email,
     required String celular,
     required String planLocation,
-    required double planPrice,
+    required double planPrice, // Monto pagado EN ESTA TRANSACCIÓN
     required String supplier,
+
+    // Campos planos
     required String paymentMethod,
     required String transactionCode,
     required String receipt,
-    required String documentId,
-    required String code,
     required String cedula,
     required String numero,
     required String correo,
+    required String documentId,
+    required String code,
     required List<Map<String, dynamic>> packagesData,
+
+    // Nuevos Campos
+    double? totalPlanPrice,
+    bool isInstallment = false,
+    int installmentsPaid = 0,
+
+    // DETALLE COMPLETO DEL PRIMER PAGO
+    required Map<String, dynamic> initialPaymentDetails,
   }) async {
     try {
-      final fecha = DateTime.now().toIso8601String();
+      final fechaIso = DateTime.now().toIso8601String();
+      final double finalTotal = totalPlanPrice ?? planPrice;
+      String paymentStatus = 'completed';
+
+      if (isInstallment && planPrice < (finalTotal - 0.1)) {
+        paymentStatus = 'partial';
+      }
+
       final docRef = _firestore
           .collection('reservaciones')
           .doc(supplier)
           .collection('reservas')
           .doc(documentId);
 
+      // Creamos el objeto del primer pago (Este sí nace verificado usualmente al crearlo el proveedor)
+      final firstPaymentEntry = {
+        ...initialPaymentDetails,
+        'amount': planPrice,
+        'date': Timestamp.now(),
+        'type': 'initial',
+        'status':
+            'verified', // El pago inicial manual se asume verificado al crearlo el proveedor
+      };
+
       final bookingData = {
+        'userId': userId,
+        'supplier': supplier,
         'planName': planName,
-        'totalPriceBs': totalPriceBs,
-        'name': name,
-        'email': email,
-        'celular': celular,
         'planLocation': planLocation,
-        'totalPrice': planPrice,
+
+        // --- FINANZAS ---
+        'amountPaid': planPrice,
+        'totalPlanPrice': finalTotal,
+        'totalPriceBs': totalPriceBs,
+        'isInstallment': isInstallment,
+        'installmentsPaid': installmentsPaid,
+        'paymentStatus': paymentStatus,
+
+        // --- HISTORIAL DE PAGOS ---
+        'paymentHistory': [firstPaymentEntry],
+
+        // --- DATOS PLANOS ---
+        'paymentMethod': paymentMethod,
         'transactionCode': transactionCode,
         'receipt': receipt,
-        'fecha': fecha,
-        'estado': 'pendiente',
-        'supplier': supplier,
-        'userId': userId,
-        'paymentMethod': paymentMethod,
-        'code': code,
         'cedula': cedula,
         'numero': numero,
         'correo': correo,
+
+        // --- CONTACTO Y ESTADO ---
+        'name': name,
+        'email': email,
+        'celular': celular,
+        'fecha': fechaIso,
+        'createdAt': FieldValue.serverTimestamp(),
+        'estado': 'pendiente', // O 'verificado' según lógica de manual_booking
+        'code': code,
+
+        // --- PAQUETES ---
         'packages': packagesData.map((pkg) {
           final String bookingType = pkg['tipoDeReserva'] ?? 'Reserva';
           Map<String, dynamic> packageToSave = {
@@ -159,8 +229,6 @@ class BookingProvider extends ChangeNotifier {
           } else if (bookingType == 'Reserva Flexible') {
             packageToSave['instrucciones'] = pkg['instrucciones'];
           }
-          // Los tipos 'Ticket' y 'Suscripción' no guardan campos adicionales en el paquete de la reserva.
-
           return packageToSave;
         }).toList(),
       };
@@ -173,7 +241,100 @@ class BookingProvider extends ChangeNotifier {
     }
   }
 
-  // MODIFICADO: Ahora también maneja Timestamps de Firestore, haciéndolo más robusto.
+  // --- REGISTRAR ABONO (MODIFICADO: SE GUARDA COMO PENDIENTE) ---
+  Future<void> addPaymentToBooking({
+    required String supplierId,
+    required String bookingId,
+    required String userId,
+    required double amountPaid, // Monto del pago
+    required Map<String, dynamic> paymentDetails, // Banco, Ref, etc.
+    required double
+        currentTotalPaid, // No se usa para update inmediato, solo referencia
+    required double totalPlanPrice, // No se usa para update inmediato
+  }) async {
+    try {
+      // 1. Creamos el objeto con status PENDIENTE
+      final newPaymentEntry = {
+        ...paymentDetails,
+        'amount': amountPaid,
+        'date': Timestamp.now(),
+        'type': 'installment',
+        'status': 'pending', // <--- IMPORTANTE: No verificado aún
+      };
+
+      // 2. Solo agregamos al historial. NO sumamos amountPaid todavía.
+      await _firestore
+          .collection('reservaciones')
+          .doc(supplierId)
+          .collection('reservas')
+          .doc(bookingId)
+          .update({
+        'paymentHistory': FieldValue.arrayUnion([newPaymentEntry]),
+
+        // Actualizamos referencia visual rápida, pero no el saldo contable
+        'paymentMethod': paymentDetails['method'],
+        'transactionCode': paymentDetails['referencia'] ?? '',
+      });
+
+      await loadBookings(userId);
+    } catch (e) {
+      logger.e('Error registrando abono: $e');
+      throw Exception('No se pudo registrar el pago: $e');
+    }
+  }
+
+  // --- NUEVA FUNCIÓN: VERIFICAR UN PAGO ESPECÍFICO ---
+  // Esta función se llamará desde supplier_verify_payments_screen
+  Future<void> verifyIndividualPayment({
+    required String supplierId,
+    required String bookingId,
+    required Map<String, dynamic> paymentData, // El objeto del pago pendiente
+    required double currentTotalPaid, // Lo que ya estaba pagado (verificado)
+    required double totalPlanPrice,
+    required int currentInstallments,
+  }) async {
+    try {
+      // 1. Calcular nuevos totales ahora que se verificó
+      double paymentAmount = (paymentData['amount'] ?? 0).toDouble();
+      double newTotalPaid = currentTotalPaid + paymentAmount;
+      bool isCompleted = newTotalPaid >= (totalPlanPrice - 0.1);
+
+      // 2. Crear la versión verificada del objeto de pago
+      Map<String, dynamic> verifiedPayment = Map.from(paymentData);
+      verifiedPayment['status'] = 'verified';
+      verifiedPayment['verifiedAt'] = Timestamp.now();
+
+      final docRef = _firestore
+          .collection('reservaciones')
+          .doc(supplierId)
+          .collection('reservas')
+          .doc(bookingId);
+
+      // 3. Ejecutar transacción para integridad
+      await _firestore.runTransaction((transaction) async {
+        // Primero quitamos el pago pendiente antiguo del array
+        transaction.update(docRef, {
+          'paymentHistory': FieldValue.arrayRemove([paymentData])
+        });
+
+        // Luego agregamos el verificado y actualizamos los saldos globales
+        transaction.update(docRef, {
+          'paymentHistory': FieldValue.arrayUnion([verifiedPayment]),
+          'amountPaid': newTotalPaid, // AHORA SÍ SUMAMOS
+          'installmentsPaid': currentInstallments + 1,
+          'paymentStatus': isCompleted ? 'completed' : 'partial',
+          'estado': isCompleted
+              ? 'verificado'
+              : 'verificado', // Mantenemos verificado o cambiamos si completó
+        });
+      });
+    } catch (e) {
+      logger.e('Error verificando pago individual: $e');
+      throw Exception('Error al verificar pago: $e');
+    }
+  }
+
+  // --- UTILERÍA ---
   DateTime _parseFecha(dynamic fecha) {
     if (fecha is DateTime) return fecha;
     if (fecha is String) return DateFormat('yyyy-MM-dd').parse(fecha);
@@ -181,7 +342,7 @@ class BookingProvider extends ChangeNotifier {
     throw FormatException('Formato de fecha no válido: $fecha');
   }
 
-  // MODIFICADO: Corrige un error lógico al actualizar el estado local
+  // Verificar reserva completa (Lado del Proveedor - Para reserva inicial)
   Future<void> verifyBooking(String reservaId, String supplierId) async {
     try {
       final reservaRef = _firestore
@@ -192,7 +353,6 @@ class BookingProvider extends ChangeNotifier {
 
       await reservaRef.update({'estado': 'verificado'});
 
-      // Busca el userId del cliente para actualizar el estado en la UI
       final doc = await reservaRef.get();
       if (doc.exists) {
         final userId = doc.data()?['userId'];
@@ -200,7 +360,6 @@ class BookingProvider extends ChangeNotifier {
           updateBookingStatus(userId, reservaId, 'verificado');
         }
       }
-
       notifyListeners();
     } catch (e) {
       logger.e('Error al verificar la reserva: $e');

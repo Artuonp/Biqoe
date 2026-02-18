@@ -1,10 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'payment_details_screen.dart';
+
+const Color kPrimaryColor = Color.fromRGBO(17, 48, 73, 1);
+const Color kBackgroundColor = Color(0xFFF8F9FD);
+
+// --- NOTA: He borrado la extensión 'StringExtension' de aquí porque
+// ya existe en 'payment_details_screen.dart' y se importa automáticamente. ---
 
 class ReservationScreen extends StatefulWidget {
   final String userId;
@@ -12,6 +17,7 @@ class ReservationScreen extends StatefulWidget {
   final String planName;
   final String location;
   final String supplier;
+  final String destinationId;
 
   const ReservationScreen({
     super.key,
@@ -20,6 +26,7 @@ class ReservationScreen extends StatefulWidget {
     required this.planName,
     required this.location,
     required this.supplier,
+    required this.destinationId,
   });
 
   @override
@@ -48,60 +55,95 @@ class ReservationScreenState extends State<ReservationScreen> {
   List<PackageReservationData> packagesData = [];
   String? selectedPaymentMethod;
   List<String> paymentMethods = [];
-  final List<TextEditingController> _peopleControllers = [];
   bool _isLoading = false;
+
+  String? _realDocId;
 
   @override
   void initState() {
     super.initState();
     _initializePackagesData();
-    _loadPaymentMethods();
+    _resolveIdAndLoadData();
   }
 
   void _initializePackagesData() {
     packagesData = widget.selectedPackages.map((package) {
       final disp = package['disponibilidad'];
-      final bookingType = package['tipoDeReserva'] ?? 'Reserva';
+      String rawType = package['tipo'] ?? package['tipoDeReserva'] ?? 'Reserva';
+      String bookingType = 'Reserva';
+
+      if (rawType == 'fixed' || rawType == 'Ticket') {
+        bookingType = 'Ticket';
+      } else if (rawType == 'flexible' || rawType == 'Reserva Flexible') {
+        bookingType = 'Reserva Flexible';
+      } else if (rawType == 'dated' || rawType == 'Reserva') {
+        bookingType = 'Reserva';
+      } else if (rawType == 'Suscripción') {
+        bookingType = 'Suscripción';
+      }
+
+      package['internal_type'] = bookingType;
 
       return PackageReservationData(
         package: package,
         availability: bookingType == 'Reserva'
-            ? (disp is List
-                ? List<Map<String, dynamic>>.from(disp)
-                : (disp != null ? [disp] : []))
+            ? (disp is List ? List<Map<String, dynamic>>.from(disp) : [])
             : [],
         numberOfPeople: 1,
       );
     }).toList();
-
-    _peopleControllers.addAll(List.generate(
-        packagesData.length, (index) => TextEditingController(text: '1')));
   }
 
-  Future<void> _loadPaymentMethods() async {
+  Future<void> _resolveIdAndLoadData() async {
     try {
-      DocumentSnapshot destinationSnapshot = await FirebaseFirestore.instance
-          .collection('destinos')
-          .doc(widget.planName)
-          .get();
+      DocumentSnapshot? doc;
 
-      if (destinationSnapshot.exists) {
-        var data = destinationSnapshot.data() as Map<String, dynamic>?;
-        if (data != null && data.containsKey('pagos')) {
-          if (mounted) {
-            setState(() {
-              paymentMethods = List<String>.from(
-                  data['pagos'].map((payment) => payment['metodo']));
-            });
-          }
+      // 1. Intentar usar el ID que nos pasaron directamente
+      if (widget.destinationId.isNotEmpty) {
+        doc = await FirebaseFirestore.instance
+            .collection('destinos')
+            .doc(widget.destinationId)
+            .get();
+      }
+
+      // 2. Si no existe ese ID, buscamos por nombre
+      if (doc == null || !doc.exists) {
+        final query = await FirebaseFirestore.instance
+            .collection('destinos')
+            .where('nombre', isEqualTo: widget.planName)
+            .limit(1)
+            .get();
+
+        if (query.docs.isNotEmpty) {
+          doc = query.docs.first;
+        }
+      }
+
+      // 3. Si encontramos el documento, guardamos el ID real y cargamos pagos
+      if (doc != null && doc.exists) {
+        _realDocId = doc.id;
+        final data = doc.data() as Map<String, dynamic>;
+
+        List<dynamic> rawPagos = [];
+        if (data.containsKey('metodosPago')) {
+          rawPagos = data['metodosPago'];
+        } else if (data.containsKey('pagos')) {
+          rawPagos = data['pagos'];
+        }
+
+        if (mounted) {
+          setState(() {
+            paymentMethods = [];
+            for (var item in rawPagos) {
+              if (item is Map && item['metodo'] != null) {
+                paymentMethods.add(item['metodo'].toString());
+              }
+            }
+          });
         }
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar métodos de pago: $e')),
-        );
-      }
+      debugPrint("Error resolviendo ID: $e");
     }
   }
 
@@ -110,8 +152,19 @@ class ReservationScreenState extends State<ReservationScreen> {
     final formattedDate = DateFormat('yyyy-MM-dd').format(pickedDate);
 
     final availabilityForDate = package.availability.where((item) {
-      return item['fecha'] == formattedDate &&
-          (item['cupos'] ?? 0) >= package.numberOfPeople;
+      bool matchesDate = false;
+      if (item.containsKey('fecha')) {
+        matchesDate = item['fecha'] == formattedDate;
+      }
+      if (item.containsKey('fechaInicio')) {
+        matchesDate = item['fechaInicio'] == formattedDate;
+      }
+      return matchesDate && (item['cupos'] ?? 0) >= package.numberOfPeople;
+    }).map((item) {
+      String inicio =
+          item['hora'] ?? item['horaInicio'] ?? item['inicio'] ?? "";
+      String fin = item['horaFin'] ?? item['fin'] ?? "";
+      return {...item, 'inicio': inicio, 'fin': fin, 'cupos': item['cupos']};
     }).toList();
 
     setState(() {
@@ -121,62 +174,70 @@ class ReservationScreenState extends State<ReservationScreen> {
     });
   }
 
-  // NUEVO: Lógica de descuento de cupos robusta y transaccional
   Future<void> _updateCupos() async {
+    if (_realDocId == null) {
+      throw Exception(
+          "No se ha podido identificar el destino en la base de datos.");
+    }
+
     final docRef =
-        FirebaseFirestore.instance.collection('destinos').doc(widget.planName);
+        FirebaseFirestore.instance.collection('destinos').doc(_realDocId);
 
     return FirebaseFirestore.instance.runTransaction((transaction) async {
       final snapshot = await transaction.get(docRef);
       if (!snapshot.exists) throw Exception("El destino ya no existe.");
 
-      var paquetesRemotos =
-          List<Map<String, dynamic>>.from(snapshot.data()!['paquetes']);
+      var data = snapshot.data()!;
+      var paquetesRemotos = List<Map<String, dynamic>>.from(data['paquetes']);
 
       for (var localPackageData in packagesData) {
-        final tipo = localPackageData.package['tipoDeReserva'] ?? 'Reserva';
-        final paqueteIndex = paquetesRemotos.indexWhere(
-            (p) => p['numero'] == localPackageData.package['numero']);
+        final paqueteIndex = paquetesRemotos.indexWhere((p) =>
+            (p['miniDescripcion'] ==
+                localPackageData.package['miniDescripcion']) ||
+            (p['nombre'] == localPackageData.package['nombre']));
 
-        if (paqueteIndex == -1) {
-          throw Exception(
-              "El paquete ${localPackageData.package['numero']} ya no existe.");
-        }
+        if (paqueteIndex == -1) continue;
 
         var paqueteRemoto = paquetesRemotos[paqueteIndex];
+        String tipo = localPackageData.package['internal_type'];
 
         if (tipo == 'Reserva') {
           if (localPackageData.selectedDate == null ||
               localPackageData.selectedTimeInterval == null) {
             continue;
           }
+
           var disponibilidad =
               List<Map<String, dynamic>>.from(paqueteRemoto['disponibilidad']);
-          final dispIndex = disponibilidad.indexWhere((d) =>
-              d['fecha'] ==
-                  DateFormat('yyyy-MM-dd')
-                      .format(localPackageData.selectedDate!) &&
-              d['inicio'] == localPackageData.selectedTimeInterval!['inicio'] &&
-              d['fin'] == localPackageData.selectedTimeInterval!['fin']);
+          final dateStr =
+              DateFormat('yyyy-MM-dd').format(localPackageData.selectedDate!);
 
-          if (dispIndex == -1) {
-            throw Exception("El horario seleccionado ya no está disponible.");
-          }
-          if ((disponibilidad[dispIndex]['cupos'] as int) <
-              localPackageData.numberOfPeople) {
-            throw Exception(
-                "No hay suficientes cupos para el Paquete ${localPackageData.package['numero']}.");
-          }
+          final dispIndex = disponibilidad.indexWhere((d) {
+            bool matchDate =
+                (d['fecha'] == dateStr) || (d['fechaInicio'] == dateStr);
+            String dInicio = d['hora'] ?? d['horaInicio'] ?? d['inicio'];
+            return matchDate &&
+                dInicio == localPackageData.selectedTimeInterval!['inicio'];
+          });
 
-          disponibilidad[dispIndex]['cupos'] -= localPackageData.numberOfPeople;
-          paqueteRemoto['disponibilidad'] = disponibilidad;
+          if (dispIndex != -1) {
+            if ((disponibilidad[dispIndex]['cupos'] as int) <
+                localPackageData.numberOfPeople) {
+              throw Exception("No hay suficientes cupos.");
+            }
+            disponibilidad[dispIndex]['cupos'] -=
+                localPackageData.numberOfPeople;
+            paqueteRemoto['disponibilidad'] = disponibilidad;
+          }
         } else if (tipo == 'Ticket' || tipo == 'Suscripción') {
-          if ((paqueteRemoto['cuposDisponibles'] as int) <
-              localPackageData.numberOfPeople) {
-            throw Exception(
-                "No hay suficientes cupos para el Paquete ${localPackageData.package['numero']}.");
+          if (paqueteRemoto['cuposDisponibles'] != null) {
+            if ((paqueteRemoto['cuposDisponibles'] as int) <
+                localPackageData.numberOfPeople) {
+              throw Exception("No hay suficientes cupos.");
+            }
+            paqueteRemoto['cuposDisponibles'] -=
+                localPackageData.numberOfPeople;
           }
-          paqueteRemoto['cuposDisponibles'] -= localPackageData.numberOfPeople;
         }
         paquetesRemotos[paqueteIndex] = paqueteRemoto;
       }
@@ -190,21 +251,18 @@ class ReservationScreenState extends State<ReservationScreen> {
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: Colors.white,
-          title: const Text('Error',
-              style: TextStyle(
-                  fontFamily: 'Poppins',
-                  color: Color.fromRGBO(17, 48, 73, 1),
-                  fontWeight: FontWeight.bold)),
-          content: Text(message,
-              style: const TextStyle(
-                  fontFamily: 'Poppins', color: Color.fromRGBO(17, 48, 73, 1))),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text('Atención',
+              style: GoogleFonts.poppins(
+                  color: kPrimaryColor, fontWeight: FontWeight.bold)),
+          content:
+              Text(message, style: GoogleFonts.poppins(color: Colors.black87)),
           actions: <Widget>[
             TextButton(
-              child: const Text('OK',
-                  style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontWeight: FontWeight.bold,
-                      color: Color.fromRGBO(17, 48, 73, 1))),
+              child: Text('Entendido',
+                  style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.bold, color: kPrimaryColor)),
               onPressed: () => Navigator.of(context).pop(),
             ),
           ],
@@ -213,32 +271,24 @@ class ReservationScreenState extends State<ReservationScreen> {
     );
   }
 
-  // NUEVO: La validación ahora es transaccional y comprueba todos los tipos de cupos
   Future<void> _validateAndProcessReservation() async {
     setState(() => _isLoading = true);
-
     try {
-      // Validación de datos locales primero
       if (selectedPaymentMethod == null) {
         throw Exception('Seleccione un método de pago.');
       }
 
       for (var packageData in packagesData) {
-        if (packageData.numberOfPeople <= 0) {
-          throw Exception(
-              'La cantidad para cada paquete debe ser mayor a cero.');
-        }
-        if (packageData.package['tipoDeReserva'] == 'Reserva' &&
+        if (packageData.package['internal_type'] == 'Reserva' &&
             (packageData.selectedDate == null ||
                 packageData.selectedTimeInterval == null)) {
-          throw Exception('Seleccione fecha y horario en el calendario.');
+          throw Exception(
+              'Seleccione fecha y horario para todos los paquetes de reserva.');
         }
       }
 
-      // Validación de cupos contra Firestore
       await _updateCupos();
 
-      // Si la transacción fue exitosa, procedemos a la pantalla de pago
       if (mounted) {
         Navigator.push(
           context,
@@ -250,25 +300,25 @@ class ReservationScreenState extends State<ReservationScreen> {
               planLocation: widget.location,
               totalPrice: totalCost,
               supplier: widget.supplier,
+              // Pasamos el ID real encontrado para evitar problemas en la siguiente pantalla
+              destinationId: _realDocId ?? widget.destinationId,
               packagesData: packagesData.map((p) {
-                final bookingType = p.package['tipoDeReserva'] ?? 'Reserva';
                 Map<String, dynamic> packageDetails = {
-                  'numero': p.package['numero'],
-                  'miniDescripcion': p.package['miniDescripcion'] ?? '',
+                  'numero': p.package['numero'] ?? 1,
+                  'miniDescripcion':
+                      p.package['miniDescripcion'] ?? p.package['nombre'] ?? '',
                   'personas': p.numberOfPeople,
                   'precio': p.package['precio'],
-                  'tipoDeReserva': bookingType,
+                  'tipoDeReserva': p.package['internal_type'],
                 };
 
-                if (bookingType == 'Reserva') {
+                if (p.package['internal_type'] == 'Reserva') {
                   packageDetails.addAll({
                     'fecha': p.selectedDate!,
-                    'hora':
-                        '${p.selectedTimeInterval!['inicio']} - ${p.selectedTimeInterval!['fin']}',
+                    'hora': p.selectedTimeInterval!['fin'].toString().isEmpty
+                        ? p.selectedTimeInterval!['inicio']
+                        : '${p.selectedTimeInterval!['inicio']} - ${p.selectedTimeInterval!['fin']}',
                   });
-                } else if (bookingType == 'Reserva Flexible') {
-                  packageDetails
-                      .addAll({'instrucciones': p.package['instrucciones']});
                 }
                 return packageDetails;
               }).toList(),
@@ -279,538 +329,508 @@ class ReservationScreenState extends State<ReservationScreen> {
     } catch (e) {
       _showErrorDialog(e.toString().replaceFirst("Exception: ", ""));
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  double get totalCost {
+    return packagesData.fold(0.0, (total, package) {
+      return total +
+          (package.package['precio'] as num) * package.numberOfPeople;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      resizeToAvoidBottomInset: true,
+      backgroundColor: kBackgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color.fromARGB(255, 243, 247, 254),
-        iconTheme: const IconThemeData(color: Color.fromRGBO(17, 48, 73, 1)),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(widget.planName,
-                style: GoogleFonts.poppins(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: const Color.fromRGBO(17, 48, 73, 1))),
-            Text(widget.location,
-                style: GoogleFonts.poppins(
-                    color: const Color.fromRGBO(17, 48, 73, 1))),
-            const SizedBox(height: 20),
-            // MODIFICADO: Usamos ListView.builder para construir los widgets de paquete
-            ListView.separated(
-              physics: const NeverScrollableScrollPhysics(),
-              shrinkWrap: true,
-              itemCount: packagesData.length,
-              itemBuilder: (context, index) {
-                return _buildPackageWidget(packagesData[index], index);
-              },
-              separatorBuilder: (context, index) => const SizedBox(height: 16),
-            ),
-            const SizedBox(height: 20),
-            _buildPaymentOptions(),
-            const SizedBox(height: 20),
-            _buildReserveButton(),
-          ],
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.pop(context),
         ),
       ),
-      backgroundColor: const Color.fromARGB(255, 243, 247, 254),
-    );
-  }
-
-  // NUEVO: Widget "director" que decide qué tipo de tarjeta de paquete mostrar
-  Widget _buildPackageWidget(PackageReservationData packageData, int index) {
-    final bookingType = packageData.package['tipoDeReserva'] ?? 'Reserva';
-    if (bookingType == 'Reserva') {
-      return _buildExpandableReservationCard(packageData, index);
-    } else {
-      return _buildInfoPackageCard(packageData, index);
-    }
-  }
-
-  // NUEVO: Tarjeta estática para Tickets, Pases Flexibles y Suscripciones
-  Widget _buildInfoPackageCard(PackageReservationData packageData, int index) {
-    return Card(
-      color: Colors.white,
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      clipBehavior: Clip.antiAlias,
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            _buildPackageHeader(packageData, index, false),
-            const SizedBox(height: 8),
-            _buildInfoUI(packageData),
-            const SizedBox(height: 16),
-            _buildQuantitySelector(packageData, index),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // NUEVO: Tarjeta expandible solo para tipo "Reserva"
-  Widget _buildExpandableReservationCard(
-      PackageReservationData packageData, int index) {
-    return Card(
-      color: Colors.white,
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      clipBehavior: Clip.antiAlias,
-      margin: EdgeInsets.zero,
-      child: Theme(
-        // Esto elimina las líneas divisorias de arriba y abajo
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          backgroundColor: Colors.white, // Asegura el fondo blanco al expandir
-          title: _buildPackageHeader(packageData, index, true),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          children: [
-            _buildReservationUI(packageData, index),
-            const SizedBox(height: 16),
-            _buildQuantitySelector(packageData, index),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // NUEVO: Header reutilizable para ambas tarjetas
-  Widget _buildPackageHeader(
-      PackageReservationData packageData, int index, bool isExpandable) {
-    IconData headerIcon;
-    final bookingType = packageData.package['tipoDeReserva'] ?? 'Reserva';
-    switch (bookingType) {
-      case 'Ticket':
-        headerIcon = Icons.confirmation_number_outlined;
-        break;
-      case 'Reserva Flexible':
-        headerIcon = Icons.all_inclusive_rounded;
-        break;
-      case 'Suscripción':
-        headerIcon = Icons.autorenew_rounded;
-        break;
-      default:
-        headerIcon =
-            isExpandable ? Icons.calendar_today : Icons.event_available;
-    }
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text("Paquete ${packageData.package['numero']}",
-                  style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: const Color.fromRGBO(17, 48, 73, 1))),
-              Text("${packageData.package['miniDescripcion']}",
-                  style: GoogleFonts.poppins(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                      color: const Color.fromRGBO(17, 48, 73, 1)),
-                  overflow: TextOverflow.ellipsis),
-            ],
-          ),
-        ),
-        Row(
-          children: [
-            Text(
-                "€${(packageData.package['precio'] * packageData.numberOfPeople).toStringAsFixed(2)}",
-                style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: const Color.fromRGBO(17, 48, 73, 1))),
-            const SizedBox(width: 8),
-            Icon(headerIcon, color: const Color.fromRGBO(17, 48, 73, 1)),
-          ],
-        ),
-      ],
-    );
-  }
-
-  // NUEVO: Selector de cantidad reutilizable
-  Widget _buildQuantitySelector(PackageReservationData packageData, int index) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text('Cantidad:',
-            style: GoogleFonts.poppins(
-                fontWeight: FontWeight.bold,
-                color: const Color.fromRGBO(17, 48, 73, 1))),
-        SizedBox(
-          width: 100,
-          child: TextFormField(
-            controller: _peopleControllers[index],
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            onChanged: (value) {
-              int newValue = int.tryParse(value) ?? 1;
-              if (newValue < 1) {
-                newValue = 1;
-                _peopleControllers[index].text = '1';
-              }
-              setState(() {
-                packageData.numberOfPeople = newValue;
-                if (packageData.selectedDate != null &&
-                    packageData.package['tipoDeReserva'] == 'Reserva') {
-                  _pickDate(packageData.selectedDate!, index);
-                }
-              });
-            },
-            decoration: InputDecoration(
-              enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide:
-                      const BorderSide(color: Color.fromRGBO(17, 48, 73, 1))),
-              focusedBorder: OutlineInputBorder(
-                  borderSide:
-                      const BorderSide(color: Color.fromRGBO(17, 48, 73, 1)),
-                  borderRadius: BorderRadius.circular(8)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // --- El resto de los métodos se mantienen como estaban ---
-  // ... _buildInfoBox, _buildInfoUI, _buildReservationUI, _buildPaymentOptions, etc. ...
-
-  Widget _buildInfoBox({
-    required String title,
-    required String message,
-    required IconData icon,
-    required Color color,
-    int? cuposDisponibles,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withAlpha((0.1 * 255).round()),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      body: Stack(
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, color: color, size: 28),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Cambia el color del título
-                    Text(
-                      title,
+          Positioned.fill(
+            bottom: 100,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.planName,
                       style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: const Color.fromRGBO(17, 48, 73, 1),
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: kPrimaryColor)),
+                  Row(
+                    children: [
+                      Icon(Icons.location_on_outlined,
+                          size: 16, color: Colors.grey[600]),
+                      const SizedBox(width: 4),
+                      Expanded(
+                          child: Text(widget.location,
+                              style: GoogleFonts.poppins(
+                                  color: Colors.grey[600], fontSize: 14),
+                              overflow: TextOverflow.ellipsis)),
+                    ],
+                  ),
+                  const SizedBox(height: 25),
+                  ListView.separated(
+                    physics: const NeverScrollableScrollPhysics(),
+                    shrinkWrap: true,
+                    itemCount: packagesData.length,
+                    itemBuilder: (context, index) =>
+                        _buildPackageWidget(packagesData[index], index),
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 5),
+                  ),
+                  const SizedBox(height: 1),
+                  const Divider(),
+                  const SizedBox(height: 10),
+                  Text('Método de pago',
+                      style: GoogleFonts.poppins(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: kPrimaryColor)),
+                  const SizedBox(height: 15),
+                  if (paymentMethods.isEmpty)
+                    Text("Cargando o sin métodos de pago...",
+                        style: GoogleFonts.poppins(color: Colors.grey))
+                  else
+                    _buildPaymentOptions(),
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 20,
+                      offset: const Offset(0, -5))
+                ],
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text("Total a pagar",
+                              style: GoogleFonts.poppins(
+                                  fontSize: 12, color: Colors.grey)),
+                          Text("€${totalCost.toStringAsFixed(2)}",
+                              style: GoogleFonts.poppins(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: kPrimaryColor)),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    // Cambia el color y alineación del mensaje
-                    Text(
-                      message,
-                      style: GoogleFonts.poppins(
-                        color: const Color.fromRGBO(17, 48, 73, 1),
+                    const SizedBox(width: 20),
+                    ElevatedButton(
+                      onPressed:
+                          _isLoading ? null : _validateAndProcessReservation,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            _isLoading ? Colors.grey.shade300 : kPrimaryColor,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 30, vertical: 16),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                        elevation: 5,
                       ),
-                      textAlign: TextAlign.left,
+                      child: Container(
+                        alignment: Alignment.center,
+                        child: Text("Reservar",
+                            style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: _isLoading
+                                    ? Colors.transparent
+                                    : Colors.white)),
+                      ),
                     ),
                   ],
                 ),
               ),
-            ],
+            ),
           ),
-          if (cuposDisponibles != null) ...[
-            const Divider(height: 24, color: Colors.black26),
-            Text(
-              cuposDisponibles > 0
-                  ? "Cupos disponibles: $cuposDisponibles"
-                  : "¡Agotado!",
-              style: GoogleFonts.poppins(
-                fontWeight: FontWeight.bold,
-                color: const Color.fromRGBO(17, 48, 73, 1),
-              ),
-            )
-          ]
         ],
       ),
     );
   }
 
+  Widget _buildPackageWidget(PackageReservationData packageData, int index) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 4))
+        ],
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: kPrimaryColor.withValues(alpha: 0.03),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.grey.shade200)),
+                  child: Text("${index + 1}",
+                      style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.bold, color: kPrimaryColor)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                          packageData.package['miniDescripcion'] ??
+                              packageData.package['nombre'] ??
+                              'Paquete',
+                          style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.bold, fontSize: 15)),
+                      Text("€${packageData.package['precio']} x persona",
+                          style: GoogleFonts.poppins(
+                              fontSize: 12, color: Colors.grey[600])),
+                    ],
+                  ),
+                ),
+                _buildModernQuantitySelector(packageData, index),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildInfoUI(packageData),
+                if (packageData.package['internal_type'] == 'Reserva') ...[
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  _buildReservationUI(packageData, index),
+                ]
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModernQuantitySelector(
+      PackageReservationData packageData, int index) {
+    return Container(
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade300)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _quantityBtn(Icons.remove, () {
+            if (packageData.numberOfPeople > 1) {
+              setState(() {
+                packageData.numberOfPeople--;
+                if (packageData.package['internal_type'] == 'Reserva' &&
+                    packageData.selectedDate != null) {
+                  _pickDate(packageData.selectedDate!, index);
+                }
+              });
+            }
+          }),
+          Container(
+              width: 30,
+              alignment: Alignment.center,
+              child: Text("${packageData.numberOfPeople}",
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold))),
+          _quantityBtn(Icons.add, () {
+            setState(() {
+              packageData.numberOfPeople++;
+              if (packageData.package['internal_type'] == 'Reserva' &&
+                  packageData.selectedDate != null) {
+                _pickDate(packageData.selectedDate!, index);
+              }
+            });
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _quantityBtn(IconData icon, VoidCallback onTap) {
+    return InkWell(
+        onTap: onTap,
+        child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Icon(icon, size: 16, color: kPrimaryColor)));
+  }
+
   Widget _buildInfoUI(PackageReservationData packageData) {
-    String bookingType = packageData.package['tipoDeReserva'] ?? 'Reserva';
+    String bookingType = packageData.package['internal_type'];
     int? cupos = packageData.package['cuposDisponibles'] as int?;
     switch (bookingType) {
       case 'Ticket':
         return _buildInfoBox(
-          title: "Detalles del Ticket",
-          message:
-              "Este ticket es válido únicamente para la(s) fecha(s) y condiciones establecidas en la descripción. Por favor, asegúrate de estar de acuerdo con los detalles antes de continuar, ya que no se permiten cambios de fecha ni horario.",
-          icon: Icons.confirmation_number_outlined,
-          color: Color.fromARGB(255, 133, 178, 255),
-          cuposDisponibles: cupos,
-        );
+            title: "Ticket fijo",
+            message: "Válido para la fecha del evento.",
+            icon: Icons.confirmation_number_outlined,
+            color: Colors.blue,
+            cuposDisponibles: cupos);
       case 'Reserva Flexible':
         return _buildInfoBox(
-          title: "Reserva flexible",
-          message:
-              "Una vez confirmada tu reserva, el proveedor se pondrá en contacto contigo para coordinar el día y la hora de tu visita.",
-          icon: Icons.all_inclusive_rounded,
-          color: Color.fromARGB(255, 133, 178, 255),
-        );
+            title: "Fecha flexible",
+            message: "Coordina luego de la compra.",
+            icon: Icons.all_inclusive_rounded,
+            color: Colors.purple);
       case 'Suscripción':
         return _buildInfoBox(
-          title: "Suscripción",
-          message:
-              "Tu suscripción comenzará el día en que se verifique tu pago y será válida durante el periodo detallado en la descripción.",
-          icon: Icons.autorenew_rounded,
-          color: Color.fromARGB(255, 133, 178, 255),
-          cuposDisponibles: cupos,
-        );
+            title: "Suscripción",
+            message: "Acceso recurrente.",
+            icon: Icons.autorenew_rounded,
+            color: Colors.orange,
+            cuposDisponibles: cupos);
       default:
         return const SizedBox.shrink();
     }
   }
 
+  Widget _buildInfoBox(
+      {required String title,
+      required String message,
+      required IconData icon,
+      required Color color,
+      int? cuposDisponibles}) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.3))),
+      child: Row(children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 10),
+        Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title,
+              style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: Colors.black87)),
+          Text(message,
+              style: GoogleFonts.poppins(fontSize: 12, color: Colors.black54)),
+          if (cuposDisponibles != null)
+            Text("Cupos: $cuposDisponibles",
+                style: GoogleFonts.poppins(
+                    fontSize: 12, fontWeight: FontWeight.bold, color: color))
+        ]))
+      ]),
+    );
+  }
+
   Widget _buildReservationUI(PackageReservationData packageData, int index) {
-    const primaryColor = Color.fromRGBO(17, 48, 73, 1);
-
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        TableCalendar(
-          locale: 'es_ES',
-          firstDay: DateTime.now(),
-          lastDay: DateTime.now().add(const Duration(days: 365)),
-          focusedDay: packageData.selectedDate ?? DateTime.now(),
-          selectedDayPredicate: (day) =>
-              isSameDay(packageData.selectedDate, day),
-          onDaySelected: (selectedDay, focusedDay) =>
-              _pickDate(selectedDay, index),
-
-          // --- ESTILOS MODIFICADOS ---
-
-          headerStyle: HeaderStyle(
-              formatButtonVisible: false,
-              titleCentered: true, // Asegura que el título esté centrado
-              titleTextStyle: GoogleFonts.poppins(
-                // Fuente Poppins para el título
-                fontSize: 18,
-                color: primaryColor,
-                fontWeight: FontWeight.bold,
-              ),
-              leftChevronIcon:
-                  const Icon(Icons.chevron_left, color: primaryColor),
-              rightChevronIcon:
-                  const Icon(Icons.chevron_right, color: primaryColor),
-              titleTextFormatter: (date, locale) {
-                final formattedDate = DateFormat.yMMMM(locale).format(date);
-                return '${formattedDate[0].toUpperCase()}${formattedDate.substring(1)}';
-              }),
-
-          daysOfWeekStyle: DaysOfWeekStyle(
-            // Estilo para los días de la semana (Lun, Mar, etc.)
-            weekdayStyle: GoogleFonts.poppins(
-                color: primaryColor, fontWeight: FontWeight.w600),
-            weekendStyle: GoogleFonts.poppins(
-                color: primaryColor, fontWeight: FontWeight.w600),
-          ),
-
-          calendarStyle: CalendarStyle(
-            // Estilo para los días que no son del mes actual
-            outsideTextStyle: GoogleFonts.poppins(color: Colors.grey.shade400),
-
-            // Estilo para los días por defecto del mes
-            defaultTextStyle: GoogleFonts.poppins(color: primaryColor),
-
-            // Estilo para los fines de semana
-            weekendTextStyle: GoogleFonts.poppins(color: primaryColor),
-
-            // Estilo para el día de hoy (que no está seleccionado)
-            todayTextStyle: GoogleFonts.poppins(color: primaryColor),
-            todayDecoration: BoxDecoration(
-              color: primaryColor.withAlpha((0.2 * 255).round()),
-              shape: BoxShape.circle,
-            ),
-
-            // Estilo para el día seleccionado
-            selectedTextStyle: GoogleFonts.poppins(
-                color: Colors.white, fontWeight: FontWeight.bold),
-            selectedDecoration: const BoxDecoration(
-              color: primaryColor,
-              shape: BoxShape.circle,
-            ),
-          ),
-
-          calendarBuilders: CalendarBuilders(
-            defaultBuilder: (context, day, focusedDay) {
+        Text("Selecciona una fecha",
+            style:
+                GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14)),
+        const SizedBox(height: 10),
+        Container(
+          decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade200),
+              borderRadius: BorderRadius.circular(12)),
+          child: TableCalendar(
+            locale: 'es_ES',
+            firstDay: DateTime.now(),
+            lastDay: DateTime.now().add(const Duration(days: 365)),
+            focusedDay: packageData.selectedDate ?? DateTime.now(),
+            selectedDayPredicate: (day) =>
+                isSameDay(packageData.selectedDate, day),
+            onDaySelected: (selectedDay, focusedDay) =>
+                _pickDate(selectedDay, index),
+            headerStyle: HeaderStyle(
+                formatButtonVisible: false,
+                titleCentered: true,
+                titleTextStyle: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: kPrimaryColor),
+                leftChevronIcon: const Icon(Icons.chevron_left,
+                    color: kPrimaryColor, size: 20),
+                rightChevronIcon: const Icon(Icons.chevron_right,
+                    color: kPrimaryColor, size: 20),
+                titleTextFormatter: (date, locale) =>
+                    DateFormat.yMMMM(locale).format(date).capitalize()),
+            calendarStyle: CalendarStyle(
+                outsideTextStyle: const TextStyle(color: Colors.grey),
+                defaultTextStyle: GoogleFonts.poppins(color: Colors.black87),
+                weekendTextStyle: GoogleFonts.poppins(color: Colors.black87),
+                todayDecoration: BoxDecoration(
+                    color: kPrimaryColor.withValues(alpha: 0.1),
+                    shape: BoxShape.circle),
+                todayTextStyle: const TextStyle(color: kPrimaryColor),
+                selectedDecoration: const BoxDecoration(
+                    color: kPrimaryColor, shape: BoxShape.circle)),
+            calendarBuilders:
+                CalendarBuilders(defaultBuilder: (context, day, focusedDay) {
               final formattedDay = DateFormat('yyyy-MM-dd').format(day);
-              bool isAvailable = packageData.availability.any((item) =>
-                  item['fecha'] == formattedDay &&
-                  (item['cupos'] ?? 0) >= packageData.numberOfPeople);
-
-              // Si el día está disponible, lo pinta de verde
+              bool isAvailable = packageData.availability.any((item) {
+                bool matchesDate = false;
+                if (item.containsKey('fecha')) {
+                  matchesDate = item['fecha'] == formattedDay;
+                }
+                if (item.containsKey('fechaInicio')) {
+                  matchesDate = item['fechaInicio'] == formattedDay;
+                }
+                return matchesDate &&
+                    (item['cupos'] ?? 0) >= packageData.numberOfPeople;
+              });
               if (isAvailable) {
                 return Center(
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Colors.green.withAlpha((0.8 * 255).round()),
-                      shape: BoxShape.circle,
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      '${day.day}',
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                );
+                    child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.1),
+                            shape: BoxShape.circle),
+                        alignment: Alignment.center,
+                        child: Text('${day.day}',
+                            style: GoogleFonts.poppins(
+                                color: Colors.green[700],
+                                fontWeight: FontWeight.bold))));
               }
-              // Si no está disponible, usará los estilos definidos en calendarStyle
               return null;
-            },
+            }),
           ),
         ),
         if (packageData.selectedDate != null) ...[
           const SizedBox(height: 16),
           Text('Horarios disponibles:',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+              style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold, fontSize: 14)),
           const SizedBox(height: 8),
           if (packageData.timeIntervalsForSelectedDate.isEmpty)
-            const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8.0),
-                child: Text('No hay cupos disponibles',
-                    style: TextStyle(color: Colors.orange)))
+            Text('No hay cupos suficientes.',
+                style: GoogleFonts.poppins(color: Colors.red, fontSize: 12))
           else
             Wrap(
-              spacing: 8,
-              children: packageData.timeIntervalsForSelectedDate
-                  .map((interval) => ChoiceChip(
-                        label: Text(
-                            '${interval['inicio']} - ${interval['fin']} (Cupos: ${interval['cupos']})',
-                            style: TextStyle(
-                                color:
-                                    packageData.selectedTimeInterval == interval
-                                        ? Colors.white
-                                        : primaryColor)),
-                        side: BorderSide(color: primaryColor),
-                        selected: packageData.selectedTimeInterval == interval,
-                        onSelected: (selected) => setState(() => packageData
-                            .selectedTimeInterval = selected ? interval : null),
-                        selectedColor: primaryColor,
-                        backgroundColor: Colors.white,
-                        checkmarkColor: Colors.white,
-                      ))
-                  .toList(),
-            ),
+                spacing: 8,
+                runSpacing: 8,
+                children:
+                    packageData.timeIntervalsForSelectedDate.map((interval) {
+                  bool isSelected =
+                      packageData.selectedTimeInterval == interval;
+                  String labelText = interval['inicio'];
+                  if (interval['fin'] != null &&
+                      interval['fin'].toString().isNotEmpty) {
+                    labelText += " - ${interval['fin']}";
+                  }
+                  labelText += " (${interval['cupos']} cupos)";
+                  return ChoiceChip(
+                      label: Text(labelText,
+                          style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color:
+                                  isSelected ? Colors.white : Colors.black87)),
+                      selected: isSelected,
+                      selectedColor: kPrimaryColor,
+                      backgroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: BorderSide(
+                              color: isSelected
+                                  ? kPrimaryColor
+                                  : Colors.grey.shade300)),
+                      onSelected: (selected) => setState(() => packageData
+                          .selectedTimeInterval = selected ? interval : null),
+                      showCheckmark: false);
+                }).toList()),
         ],
       ],
     );
   }
 
-  double get totalCost {
-    return packagesData.fold(0.0, (double sum, package) {
-      return sum + (package.package['precio'] as num) * package.numberOfPeople;
-    });
-  }
-
   Widget _buildPaymentOptions() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Método de Pago:',
-            style: GoogleFonts.poppins(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: const Color.fromRGBO(17, 48, 73, 1))),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-              children: paymentMethods
-                  .map((method) => _buildPaymentOption(method))
-                  .toList()),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPaymentOption(String method) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0),
-      child: ChoiceChip(
-        label: Text(method,
-            style: GoogleFonts.poppins(
-                color: selectedPaymentMethod == method
-                    ? Colors.white
-                    : const Color.fromRGBO(17, 48, 73, 1))),
-        side: const BorderSide(color: Color.fromRGBO(17, 48, 73, 1)),
-        selected: selectedPaymentMethod == method,
-        onSelected: (selected) =>
-            setState(() => selectedPaymentMethod = selected ? method : null),
-        selectedColor: const Color.fromRGBO(17, 48, 73, 1),
-        backgroundColor: Colors.white,
-        checkmarkColor: Colors.white,
-        labelStyle:
-            GoogleFonts.poppins().copyWith(fontWeight: FontWeight.normal),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: paymentMethods.map((method) {
+          bool isSelected = selectedPaymentMethod == method;
+          return GestureDetector(
+            onTap: () => setState(() => selectedPaymentMethod = method),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              margin: const EdgeInsets.only(right: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                  color: isSelected ? kPrimaryColor : Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: isSelected ? kPrimaryColor : Colors.grey.shade300),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                              color: kPrimaryColor.withValues(alpha: 0.2),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4))
+                        ]
+                      : []),
+              child: Row(children: [
+                Icon(
+                    method.contains('Zelle')
+                        ? Icons.attach_money
+                        : Icons.payment,
+                    color: isSelected ? Colors.white : Colors.grey,
+                    size: 18),
+                const SizedBox(width: 8),
+                Text(method,
+                    style: GoogleFonts.poppins(
+                        color: isSelected ? Colors.white : Colors.grey[800],
+                        fontWeight: FontWeight.w500))
+              ]),
+            ),
+          );
+        }).toList(),
       ),
     );
-  }
-
-  Widget _buildReserveButton() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Center(
-        child: ElevatedButton(
-          onPressed: _isLoading ? null : _validateAndProcessReservation,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
-            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
-          ),
-          child: _isLoading
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
-              : Text('Reservar por €${totalCost.toStringAsFixed(2)}',
-                  style: GoogleFonts.poppins(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
-        ),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    for (var controller in _peopleControllers) {
-      controller.dispose();
-    }
-    super.dispose();
   }
 }

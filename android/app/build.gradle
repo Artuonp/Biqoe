@@ -36,16 +36,16 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace 'com.biqoe.app' // <-- AGREGA ESTA LÍNEA COMO LA PRIMERA DENTRO DEL BLOQUE android
+    namespace 'com.biqoe.app'
 
     compileSdk 36
     compileSdkVersion 36
 
-   compileOptions {
-    sourceCompatibility JavaVersion.VERSION_1_8
-    targetCompatibility JavaVersion.VERSION_1_8
-    coreLibraryDesugaringEnabled true
-}
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+        coreLibraryDesugaringEnabled true
+    }
 
     kotlinOptions {
         jvmTarget = '1.8'
@@ -68,21 +68,22 @@ android {
         release {
             keyAlias = keystoreProperties["keyAlias"]
             keyPassword = keystoreProperties["keyPassword"]
-            storeFile = keystoreProperties["storeFile"]? file(keystoreProperties["storeFile"]) : null
+            storeFile = keystoreProperties["storeFile"] ? file(keystoreProperties["storeFile"]) : null
             storePassword = keystoreProperties["storePassword"]
         }
     }
-   buildTypes {
-    release {
-        ndk {
-            debugSymbolLevel = 'SYMBOL_TABLE' // O 'FULL' si quieres todos los símbolos
+
+    buildTypes {
+        release {
+            ndk {
+                debugSymbolLevel = 'SYMBOL_TABLE'
+            }
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
-        minifyEnabled true
-        shrinkResources true
-        proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        signingConfig signingConfigs.release
     }
-}
 }
 
 flutter {
@@ -91,13 +92,22 @@ flutter {
 
 dependencies {
     // Firebase Authentication SDK
-    implementation platform('com.google.firebase:firebase-bom:32.0.0') // O la versión más reciente
+    implementation platform('com.google.firebase:firebase-bom:32.0.0')
     implementation 'com.google.firebase:firebase-auth'
     implementation 'com.google.firebase:firebase-messaging'
     implementation 'com.google.firebase:firebase-analytics'
-    implementation 'androidx.multidex:multidex:2.0.1' // Para soporte de multidex
+    implementation 'androidx.multidex:multidex:2.0.1'
 
     // Google Play Services for Google Sign-In
-    implementation 'com.google.android.gms:play-services-auth:20.7.0' // O la versión más reciente
+    implementation 'com.google.android.gms:play-services-auth:20.7.0'
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
+}
+
+// --- SOLUCIÓN PARA EL ERROR DE VERSIÓN DE ANDROIDX.ACTIVITY ---
+// Esto obliga a Gradle a usar la versión 1.9.3 aunque otras librerías pidan la 1.11.0
+configurations.all {
+    resolutionStrategy {
+        force 'androidx.activity:activity:1.9.3'
+        force 'androidx.activity:activity-ktx:1.9.3'
+    }
 }

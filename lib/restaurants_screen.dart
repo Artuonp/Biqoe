@@ -5,8 +5,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hugeicons/hugeicons.dart';
 
-import 'destination_detail_screen.dart';
-import 'search_screen.dart';
+import 'screens/supplier/destination_detail_screen.dart';
+import 'screens/search_screen.dart';
 import 'bookings_screen.dart';
 import 'saved_destinations_screen.dart';
 import 'settings_screen.dart';

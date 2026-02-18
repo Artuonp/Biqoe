@@ -1,13 +1,12 @@
+import 'package:flutter/foundation.dart'; // <--- IMPORTANTE PARA WEB
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'main_screen.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'dart:io' show Platform;
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'search_screen.dart';
+import 'package:go_router/go_router.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -77,10 +76,10 @@ class RegisterScreenState extends State<RegisterScreen> {
     }
     if (!validPrefix) return false;
 
-    // Verificar que no se repita cinco o más dígitos consecutivos (por ejemplo: 55555)
+    // Verificar que no se repita cinco o más dígitos consecutivos
     if (RegExp(r'(\d)\1{4,}').hasMatch(phone)) return false;
 
-    // Verificar que no haya 5 dígitos consecutivos en secuencia ascendente (por ejemplo: 23456)
+    // Verificar que no haya 5 dígitos consecutivos en secuencia ascendente
     for (int i = 0; i <= phone.length - 5; i++) {
       String substring = phone.substring(i, i + 5);
       bool isSequential = true;
@@ -97,14 +96,13 @@ class RegisterScreenState extends State<RegisterScreen> {
     return true;
   }
 
-// Solicitar permisos de notificaciones
+  // Solicitar permisos de notificaciones
   Future<bool> requestNotificationPermissions() async {
-    // No mostrar ningún mensaje, solo devolver true (siempre permitir continuar)
+    // En Web a veces necesitamos pedir permiso explícito, pero por ahora devolvemos true
     return true;
   }
 
   // Función para registrar un nuevo usuario
-
   Future<void> register() async {
     String name = nameController.text.trim();
     String email = emailController.text.trim();
@@ -129,16 +127,19 @@ class RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    if (!Platform.isIOS && !isValidPhone(phone)) {
+    // CORRECCIÓN PARA WEB: Validar teléfono si NO es App Nativa de iOS
+    // (En web siempre validamos, en Android también)
+    bool isNativeIOS = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
+    if (!isNativeIOS && !isValidPhone(phone)) {
       _showErrorMessage('Ingrese un número de celular válido');
       return;
     }
 
-    // Solicitar permisos de notificaciones (solo muestra mensaje, no bloquea)
     await requestNotificationPermissions();
 
-    // Esperar APNS token en iOS antes de pedir el FCM token
-    if (Platform.isIOS) {
+    // Esperar APNS token SOLO en iOS Nativo
+    if (isNativeIOS) {
       NotificationSettings settings =
           await FirebaseMessaging.instance.getNotificationSettings();
       debugPrint('Permiso de notificaciones: ${settings.authorizationStatus}');
@@ -171,7 +172,9 @@ class RegisterScreenState extends State<RegisterScreen> {
       await FirebaseAuth.instance.setLanguageCode('es');
 
       // Enviar correo de verificación
-      await userCredential.user!.sendEmailVerification();
+      if (userCredential.user != null && !userCredential.user!.emailVerified) {
+        await userCredential.user!.sendEmailVerification();
+      }
 
       // Obtener el UID del usuario
       String uid = userCredential.user!.uid;
@@ -185,21 +188,18 @@ class RegisterScreenState extends State<RegisterScreen> {
         'isAdmin': false,
         'isSupplier': false,
         'email': email,
-        'verified': false, // Campo para verificar el correo
+        'verified': false,
         'celular': phone,
-        'deviceToken': deviceToken, // Guardar el token del dispositivo
+        'deviceToken': deviceToken,
       });
 
       if (!mounted) return;
 
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-      );
+      context.go('/login');
 
       _showSuccessMessage(
           'Registro exitoso. Por favor, verifica tu correo electrónico.');
     } on FirebaseAuthException catch (e) {
-      // Manejar errores específicos de Firebase Authentication
       if (e.code == 'email-already-in-use') {
         _showErrorMessage('El correo ya está en uso. Intenta con otro.');
       } else if (e.code == 'weak-password') {
@@ -222,8 +222,7 @@ class RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  // Función para autenticarse con Google
-  /// 1️⃣ Helper para comprobar en Firestore si un email ya está registrado
+  // Helper para comprobar en Firestore si un email ya está registrado
   Future<bool> emailYaRegistrado(String email) async {
     final snapshot = await FirebaseFirestore.instance
         .collection('usuarios')
@@ -233,19 +232,16 @@ class RegisterScreenState extends State<RegisterScreen> {
     return snapshot.docs.isNotEmpty;
   }
 
-  /// 2️⃣ Método completo de registro con Google, usando el helper anterior
   Future<void> signInWithGoogle() async {
-    // Ya no se valida ni se pide el número de celular
-
-    // Solicitar permisos de notificaciones
     bool notificationsAllowed = await requestNotificationPermissions();
-    if (!notificationsAllowed && !Platform.isIOS) return;
+    // CORRECCIÓN WEB: Chequear plataforma de forma segura
+    bool isNativeIOS = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
+    if (!notificationsAllowed && !isNativeIOS) return;
 
     try {
-      // Asegurarse de empezar limpio
       await GoogleSignIn().signOut();
 
-      // 1) Selección de cuenta Google
       final googleUser = await GoogleSignIn().signIn();
       if (googleUser == null) {
         _showErrorMessage('Registro con Google cancelado.');
@@ -254,13 +250,11 @@ class RegisterScreenState extends State<RegisterScreen> {
 
       final email = googleUser.email;
 
-      // 2) Comprueba en Firestore si ya existe ese email
       if (await emailYaRegistrado(email)) {
         _showErrorMessage('Esta cuenta de Google ya está siendo utilizada');
         return;
       }
 
-      // 3) Autenticación en Firebase
       final googleAuth = await googleUser.authentication;
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
@@ -269,28 +263,21 @@ class RegisterScreenState extends State<RegisterScreen> {
       final userCredential =
           await FirebaseAuth.instance.signInWithCredential(credential);
 
-      // 4) Guarda en Firestore
       String uid = userCredential.user!.uid;
       String? deviceToken = await FirebaseMessaging.instance.getToken();
+
       await FirebaseFirestore.instance.collection('usuarios').doc(uid).set({
         'name': googleUser.displayName,
         'isAdmin': false,
         'isSupplier': false,
         'email': email,
         'verified': true,
-        'celular': '', // Siempre vacío
+        'celular': '',
         'deviceToken': deviceToken,
       });
 
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => SearchScreen(
-            destinations: const [],
-            userId: uid,
-          ),
-        ),
-      );
+      context.go('/');
       _showSuccessMessage('Registro exitoso con Google.');
     } catch (e) {
       _showErrorMessage(
@@ -299,9 +286,6 @@ class RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> signInWithApple() async {
-    // Ya no se valida ni se pide el número de celular
-
-    // Solicitar permisos de notificaciones
     bool notificationsAllowed = await requestNotificationPermissions();
     if (!notificationsAllowed) return;
 
@@ -325,11 +309,9 @@ class RegisterScreenState extends State<RegisterScreen> {
         accessToken: appleCredential.authorizationCode,
       );
 
-      // Inicia sesión en Firebase
       final userCredential =
           await FirebaseAuth.instance.signInWithCredential(credential);
 
-      // Verifica si el email ya está registrado
       final email = userCredential.user?.email ?? appleCredential.email;
       if (email == null) {
         _showErrorMessage('No se pudo obtener el correo de Apple ID.');
@@ -340,7 +322,6 @@ class RegisterScreenState extends State<RegisterScreen> {
         return;
       }
 
-      // Guarda en Firestore
       String uid = userCredential.user!.uid;
       String? deviceToken = await FirebaseMessaging.instance.getToken();
       await FirebaseFirestore.instance.collection('usuarios').doc(uid).set({
@@ -350,19 +331,13 @@ class RegisterScreenState extends State<RegisterScreen> {
         'isSupplier': false,
         'email': email,
         'verified': true,
-        'celular': '', // Siempre vacío
+        'celular': '',
         'deviceToken': deviceToken,
       });
 
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => SearchScreen(
-            destinations: const [],
-            userId: uid,
-          ),
-        ),
-      );
+      context.go('/');
+
       _showSuccessMessage('Registro exitoso con Apple.');
     } catch (e) {
       _showErrorMessage(
@@ -370,49 +345,48 @@ class RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  // Función para mostrar el mensaje de error con SnackBar
   void _showErrorMessage(String message) {
-    final snackBar = SnackBar(
-      content: Text(message, style: const TextStyle(fontFamily: 'Poppins')),
-      backgroundColor: Colors.red,
-      behavior: SnackBarBehavior.floating,
-      margin: const EdgeInsets.all(16.0),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10.0),
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: const TextStyle(fontFamily: 'Poppins')),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16.0),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10.0),
+        ),
       ),
     );
-
-    ScaffoldMessenger.of(context).showSnackBar(snackBar);
   }
 
-  // Función para mostrar el mensaje de éxito con SnackBar
   void _showSuccessMessage(String message) {
-    final snackBar = SnackBar(
-      content: Text(message, style: const TextStyle(fontFamily: 'Poppins')),
-      backgroundColor: Colors.green,
-      behavior: SnackBarBehavior.floating,
-      margin: const EdgeInsets.all(16.0),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10.0),
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: const TextStyle(fontFamily: 'Poppins')),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16.0),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10.0),
+        ),
       ),
     );
-
-    ScaffoldMessenger.of(context).showSnackBar(snackBar);
   }
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+
     return Scaffold(
-      backgroundColor: const Color.fromARGB(255, 243, 247, 254), // Fondo claro
+      backgroundColor: const Color.fromARGB(255, 243, 247, 254),
       appBar: AppBar(
-        backgroundColor:
-            const Color.fromARGB(255, 243, 247, 254), // Fondo del AppBar
-        elevation: 0, // Sin sombra
+        backgroundColor: const Color.fromARGB(255, 243, 247, 254),
+        elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back,
               color: Color.fromRGBO(17, 48, 73, 1)),
           onPressed: () {
-            Navigator.of(context).pop(); // Regresa a la pantalla anterior
+            context.pop();
           },
         ),
       ),
@@ -423,7 +397,7 @@ class RegisterScreenState extends State<RegisterScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              SizedBox(height: MediaQuery.of(context).size.height * 0.15),
+              SizedBox(height: screenHeight * 0.15),
               const Center(
                 child: Column(
                   children: [
@@ -475,7 +449,6 @@ class RegisterScreenState extends State<RegisterScreen> {
                 style: const TextStyle(fontFamily: 'Poppins'),
               ),
               const SizedBox(height: 16.0),
-              // Campo para el número de celular con selector de bandera
               Row(
                 children: [
                   Container(
@@ -517,7 +490,7 @@ class RegisterScreenState extends State<RegisterScreen> {
               const SizedBox(height: 16.0),
               TextField(
                 controller: passwordController,
-                obscureText: true, // <-- Esto oculta la contraseña
+                obscureText: true,
                 decoration: const InputDecoration(
                   hintText: 'Contraseña',
                   border: UnderlineInputBorder(),
@@ -562,7 +535,7 @@ class RegisterScreenState extends State<RegisterScreen> {
                       ),
                       onPressed: signInWithGoogle,
                     ),
-                    const SizedBox(width: 16.0), // Espacio entre los botones
+                    const SizedBox(width: 16.0),
                     IconButton(
                       icon: Image.asset(
                         'assets/images/Apple logo 2.png',
@@ -577,10 +550,7 @@ class RegisterScreenState extends State<RegisterScreen> {
               Center(
                 child: TextButton(
                   onPressed: () {
-                    Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(
-                          builder: (context) => const LoginScreen()),
-                    );
+                    context.go('/login');
                   },
                   child: const Text(
                     'Iniciar sesión',
@@ -590,7 +560,7 @@ class RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
-              SizedBox(height: MediaQuery.of(context).size.height * 0.05),
+              SizedBox(height: screenHeight * 0.05),
             ],
           ),
         ),
