@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
@@ -18,34 +19,26 @@ class _GuestScreenState extends State<GuestScreen> {
 
   Future<void> _signInAnonymously() async {
     try {
-      // 1. Iniciamos sesión anónima en Firebase
-      // Esto genera un UID temporal para que las reglas de seguridad
-      // de Firestore permitan leer los destinos.
-      await FirebaseAuth.instance.signInAnonymously();
-
-      if (mounted) {
-        // 2. Redirigir al Home real
-        // El usuario ya es "válido" para el sistema, así que entra normal.
-        context.go('/');
+      if (kIsWeb) {
+        try {
+          await FirebaseAuth.instance.setPersistence(Persistence.NONE);
+        } catch (_) {}
       }
+      await FirebaseAuth.instance.signInAnonymously();
     } catch (e) {
-      debugPrint("Error al entrar como invitado: $e");
+      debugPrint(
+          "Safari bloqueó la sesión anónima. Entrando en Modo Lectura: $e");
+      // Ya no mostramos el SnackBar rojo ni lo mandamos al login.
+    } finally {
+      // ESTA ES LA MAGIA: FALLE O NO FALLÉ, LO MANDAMOS AL HOME
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al entrar como invitado. Intenta de nuevo.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        // Si falla, lo devolvemos al login para que no se quede atrapado
-        context.go('/login');
+        context.go('/');
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Mientras se autentica, mostramos un spinner elegante
     return const Scaffold(
       backgroundColor: Color.fromARGB(255, 243, 247, 254),
       body: Center(
@@ -57,7 +50,7 @@ class _GuestScreenState extends State<GuestScreen> {
             ),
             SizedBox(height: 20),
             Text(
-              'Entrando como invitado...',
+              'Preparando tu experiencia...',
               style: TextStyle(
                 fontFamily: 'Poppins',
                 color: Color.fromRGBO(17, 48, 73, 1),

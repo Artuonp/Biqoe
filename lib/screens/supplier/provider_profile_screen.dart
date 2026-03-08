@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:hive_flutter/hive_flutter.dart'; // Importante para Seguir
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 // --- IMPORTS NECESARIOS ---
 import 'destination_detail_screen.dart';
 import '../../services/chat_service.dart';
 import '../chat_detail_screen.dart';
-import '../../login_screen.dart';
+import '../../main_screen.dart';
 
 class ProviderProfileScreen extends StatefulWidget {
   final String slug;
@@ -30,57 +34,238 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
   final Color backgroundColor = const Color(0xFFF3F7FE);
 
   Box? _followedProvidersBox;
-  late Future<QuerySnapshot> _profileFuture;
+  late Future<Map<String, dynamic>?> _profileFuture;
+  String? _initError;
+
+  // ID del proyecto Firebase (cámbialo por el tuyo)
+  final String _projectId = 'biqoe-app';
 
   @override
   void initState() {
     super.initState();
     _initHive();
 
-    // 1. Guardamos la consulta (Igual que antes)
-    _profileFuture = FirebaseFirestore.instance
-        .collection('usuarios')
-        .where('slug', isEqualTo: widget.slug)
-        .limit(1)
-        .get();
+    try {
+      if (widget.slug.isEmpty) {
+        throw Exception('El slug está vacío');
+      }
 
-    // 2. NUEVO: Llamamos a la función de conteo
-    // No usamos 'await' aquí para no bloquear la interfaz (Fire & Forget)
-    _incrementViewCount();
+      debugPrint(
+          'Slug original: "${widget.slug}" (${widget.slug.runtimeType})');
+
+      _profileFuture = _getUserBySlugViaRest(widget.slug);
+
+      _incrementViewCount();
+    } catch (e, stack) {
+      debugPrint('Error SÍNCRONO en initState: $e\n$stack');
+      _initError =
+          'Error al iniciar: $e\nSlug: "${widget.slug}"\nTipo: ${widget.slug.runtimeType}';
+      _profileFuture = Future.error(e);
+    }
   }
 
-  // --- NUEVA FUNCIÓN PARA CONTAR LA VISITA ---
+  // --- FUNCIONES HTTP REST ---
+
+  Future<Map<String, dynamic>?> _getUserBySlugViaRest(String slug) async {
+    try {
+      // 1. Obtener el documento de slugs vía REST
+      final slugsUrl =
+          'https://firestore.googleapis.com/v1/projects/$_projectId/databases/(default)/documents/metadata/slugs';
+      final slugsResponse = await http.get(Uri.parse(slugsUrl));
+
+      if (slugsResponse.statusCode != 200) {
+        debugPrint('Error obteniendo slugs: ${slugsResponse.body}');
+        return null;
+      }
+
+      final slugsData = jsonDecode(slugsResponse.body);
+      if (slugsData['fields'] == null ||
+          slugsData['fields']['mapping'] == null ||
+          slugsData['fields']['mapping']['mapValue'] == null ||
+          slugsData['fields']['mapping']['mapValue']['fields'] == null) {
+        debugPrint('Estructura de slugs inesperada: ${slugsData.toString()}');
+        return null;
+      }
+
+      final mapping = slugsData['fields']['mapping']['mapValue']['fields'];
+
+      final slugKey = slug.toLowerCase();
+      if (!mapping.containsKey(slugKey)) {
+        debugPrint('Slug no encontrado: $slugKey');
+        return null;
+      }
+
+      final userId = mapping[slugKey]['stringValue'];
+
+      // 2. Obtener el documento del usuario vía REST
+      final userUrl =
+          'https://firestore.googleapis.com/v1/projects/$_projectId/databases/(default)/documents/usuarios/$userId';
+      final userResponse = await http.get(Uri.parse(userUrl));
+
+      if (userResponse.statusCode != 200) {
+        debugPrint('Error obteniendo usuario: ${userResponse.body}');
+        return null;
+      }
+
+      final userData = jsonDecode(userResponse.body);
+      return _convertFirestoreMap(userData);
+    } catch (e, stack) {
+      debugPrint('Error en _getUserBySlugViaRest: $e\n$stack');
+      rethrow;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _getActivitiesBySupplierViaRest(
+      String supplierId) async {
+    try {
+      final url =
+          'https://firestore.googleapis.com/v1/projects/$_projectId/databases/(default)/documents:runQuery';
+      final body = {
+        'structuredQuery': {
+          'from': [
+            {'collectionId': 'destinos'}
+          ],
+          'where': {
+            'fieldFilter': {
+              'field': {'fieldPath': 'supplierId'},
+              'op': 'EQUAL',
+              'value': {'stringValue': supplierId}
+            }
+          }
+        }
+      };
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(body),
+      );
+      if (response.statusCode != 200) {
+        debugPrint('Error obteniendo actividades: ${response.body}');
+        return [];
+      }
+      final List<dynamic> data = jsonDecode(response.body);
+      final List<Map<String, dynamic>> activities = [];
+      for (var item in data) {
+        if (item['document'] != null) {
+          activities.add(_convertFirestoreMap(item['document']));
+        }
+      }
+      return activities;
+    } catch (e, stack) {
+      debugPrint('Error en _getActivitiesBySupplierViaRest: $e\n$stack');
+      rethrow;
+    }
+  }
+
+  // Conversor mejorado que maneja arrays de objetos correctamente
+  Map<String, dynamic> _convertFirestoreMap(Map<String, dynamic> firestoreDoc) {
+    final result = <String, dynamic>{};
+
+    final fields = firestoreDoc['fields'];
+    if (fields is Map) {
+      fields.forEach((key, value) {
+        if (value is Map) {
+          if (value.containsKey('stringValue')) {
+            result[key] = value['stringValue'];
+          } else if (value.containsKey('integerValue')) {
+            result[key] = int.tryParse(value['integerValue']) ?? 0;
+          } else if (value.containsKey('doubleValue')) {
+            result[key] = value['doubleValue'];
+          } else if (value.containsKey('booleanValue')) {
+            result[key] = value['booleanValue'];
+          } else if (value.containsKey('timestampValue')) {
+            result[key] = value['timestampValue'];
+          } else if (value.containsKey('arrayValue')) {
+            final arrayValues = value['arrayValue']['values'];
+            if (arrayValues is List) {
+              final List<dynamic> convertedList = [];
+              for (var element in arrayValues) {
+                if (element is Map) {
+                  if (element.containsKey('mapValue')) {
+                    final nestedFields = element['mapValue']?['fields'];
+                    if (nestedFields is Map) {
+                      convertedList
+                          .add(_convertFirestoreMap({'fields': nestedFields}));
+                    } else {
+                      convertedList.add(element);
+                    }
+                  } else {
+                    // Es un valor primitivo dentro del array
+                    convertedList.add(_extractPrimitiveValue(element));
+                  }
+                } else {
+                  // No es mapa, agregar tal cual
+                  convertedList.add(element);
+                }
+              }
+              result[key] = convertedList;
+            } else {
+              result[key] = [];
+            }
+          } else if (value.containsKey('mapValue')) {
+            final nestedFields = value['mapValue']?['fields'];
+            if (nestedFields is Map) {
+              result[key] = _convertFirestoreMap({'fields': nestedFields});
+            } else {
+              result[key] = value;
+            }
+          } else {
+            result[key] = value;
+          }
+        } else {
+          debugPrint('Valor no es mapa para clave $key: $value');
+          result[key] = value;
+        }
+      });
+    } else {
+      debugPrint('fields no es un mapa: $fields');
+    }
+
+    final name = firestoreDoc['name'];
+    if (name is String) {
+      final nameParts = name.split('/');
+      result['id'] = nameParts.last;
+    } else {
+      result['id'] = '';
+    }
+
+    return result;
+  }
+
+  dynamic _extractPrimitiveValue(Map element) {
+    // Acepta cualquier Map (claves dynamic, valores dynamic)
+    if (element.containsKey('stringValue')) return element['stringValue'];
+    if (element.containsKey('integerValue')) {
+      return int.tryParse(element['integerValue']) ?? 0;
+    }
+    if (element.containsKey('doubleValue')) return element['doubleValue'];
+    if (element.containsKey('booleanValue')) return element['booleanValue'];
+    return element;
+  }
+
+  // --- CONTADOR DE VISTAS ---
   Future<void> _incrementViewCount() async {
     try {
-      // Esperamos el resultado de la consulta que ya se lanzó arriba
-      final snapshot = await _profileFuture;
-
-      if (snapshot.docs.isNotEmpty) {
-        final doc = snapshot.docs.first;
-
-        // (Opcional) No contar si es el propio dueño visitando su perfil
-        if (doc.id == widget.currentUserId) return;
-
-        // Actualización atómica en Firestore
-        await doc.reference.update({
+      final userData = await _profileFuture;
+      if (userData != null && userData['id'] != widget.currentUserId) {
+        await FirebaseFirestore.instance
+            .collection('usuarios')
+            .doc(userData['id'])
+            .update({
           'profileViews': FieldValue.increment(1),
-          // Opcional: Guardar fecha de última vista para analíticas futuras
           'lastViewedAt': FieldValue.serverTimestamp(),
         });
       }
-    } catch (e) {
-      // Silenciamos errores aquí para no molestar al usuario si falla el contador
-      debugPrint("Error actualizando contador de visitas: $e");
-    }
+    } catch (_) {}
   }
 
   // --- HIVE: SEGUIR PROVEEDOR ---
   Future<void> _initHive() async {
+    if (kIsWeb) return; // No usar Hive en web
     if (widget.currentUserId.isNotEmpty && widget.currentUserId != 'guest') {
       try {
         _followedProvidersBox =
             await Hive.openBox('followed_providers_${widget.currentUserId}');
-        // Solo hacemos setState una vez al cargar la caja
         if (mounted) setState(() {});
       } catch (e) {
         debugPrint("Error abriendo Hive: $e");
@@ -89,116 +274,300 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
   }
 
   // --- LÓGICA DE BÚSQUEDA DE RESERVA ---
+  // Usa REST API en lugar de Firestore SDK para compatibilidad con Safari web.
   void _showBookingSearchDialog(String providerId) {
     final TextEditingController searchCtrl = TextEditingController();
+    // Usamos StatefulBuilder para poder mostrar estado de carga DENTRO del diálogo
+    // sin cerrarlo — esto es clave para Safari donde cerrar+abrir diálogos
+    // en secuencia rápida causa que el segundo nunca aparezca.
+    bool isSearching = false;
+    String? errorMsg;
 
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text("Buscar Reserva",
-            style: TextStyle(
-                fontFamily: 'Poppins',
-                fontWeight: FontWeight.bold,
-                color: primaryColor)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              "Ingresa tu código de reserva para ver los detalles.",
-              style: TextStyle(fontFamily: 'Poppins', fontSize: 13),
-            ),
-            const SizedBox(height: 15),
-            TextField(
-              controller: searchCtrl,
-              textCapitalization: TextCapitalization.characters,
-              decoration: InputDecoration(
-                hintText: "Ej: A1B2C3D4",
-                filled: true,
-                fillColor: Colors.grey[100],
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text("Buscar Reserva",
+              style: TextStyle(
+                  fontFamily: 'Poppins',
+                  fontWeight: FontWeight.bold,
+                  color: primaryColor)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text("Ingresa tu código de reserva para ver los detalles.",
+                  style: TextStyle(fontFamily: 'Poppins', fontSize: 13)),
+              const SizedBox(height: 15),
+              TextField(
+                controller: searchCtrl,
+                textCapitalization: TextCapitalization.characters,
+                decoration: InputDecoration(
+                  hintText: "Ej: A1B2C3D4",
+                  filled: true,
+                  fillColor: Colors.grey[100],
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               ),
+              if (errorMsg != null) ...[
+                const SizedBox(height: 10),
+                Text(errorMsg!,
+                    style: const TextStyle(color: Colors.red, fontSize: 12)),
+              ],
+              if (isSearching) ...[
+                const SizedBox(height: 16),
+                const CircularProgressIndicator(),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed:
+                    isSearching ? null : () => Navigator.pop(dialogContext),
+                child: const Text("Cancelar",
+                    style: TextStyle(color: Colors.grey))),
+            ElevatedButton(
+              onPressed: isSearching
+                  ? null
+                  : () async {
+                      final code = searchCtrl.text.trim().toUpperCase();
+                      if (code.isEmpty) return;
+
+                      // 🔥 FIX: Capturamos el Navigator ANTES de cualquier await
+                      final nav = Navigator.of(dialogContext);
+
+                      setDialogState(() {
+                        isSearching = true;
+                        errorMsg = null;
+                      });
+
+                      try {
+                        const String apiKey =
+                            'AIzaSyD6gvIVnsBg9QSdP04gM3qgzEjKI5FjEEU';
+
+                        debugPrint('[Reserva] Buscando código: $code');
+                        debugPrint('[Reserva] ProviderId: $providerId');
+
+                        // ── ESTRATEGIA ───────────────────────────────────────
+                        // Ruta real: reservaciones/{supplierId}/reservas/{docId}
+                        //
+                        // Firestore REST runQuery para subcolecciones:
+                        // - La URL debe apuntar al DOCUMENTO PADRE (reservaciones/{id}),
+                        //   NO a la subcolección. El error 400 "lacks /" ocurre cuando
+                        //   la URL apunta a la subcolección directamente.
+                        // - El "from" en el body especifica la subcolección a buscar.
+                        //
+                        // URL correcta: .../documents/reservaciones/{providerId}:runQuery
+                        // Body: from: [{collectionId: 'reservas'}]
+                        final queryUrl =
+                            'https://firestore.googleapis.com/v1/projects/$_projectId/databases/(default)/documents/reservaciones/$providerId:runQuery?key=$apiKey';
+
+                        final queryBody = jsonEncode({
+                          'structuredQuery': {
+                            'from': [
+                              {'collectionId': 'reservas'}
+                            ],
+                            'where': {
+                              'fieldFilter': {
+                                'field': {'fieldPath': 'code'},
+                                'op': 'EQUAL',
+                                'value': {'stringValue': code}
+                              }
+                            },
+                            'limit': 1
+                          }
+                        });
+
+                        debugPrint('[Reserva] URL: $queryUrl');
+                        debugPrint('[Reserva] Body: $queryBody');
+
+                        final response = await http
+                            .post(
+                              Uri.parse(queryUrl),
+                              headers: {'Content-Type': 'application/json'},
+                              body: queryBody,
+                            )
+                            .timeout(const Duration(seconds: 12));
+
+                        debugPrint(
+                            '[Reserva] HTTP status: ${response.statusCode}');
+                        debugPrint('[Reserva] Response body: ${response.body}');
+
+                        Map<String, dynamic>? foundData;
+
+                        if (response.statusCode == 200) {
+                          final List<dynamic> results =
+                              jsonDecode(response.body);
+                          debugPrint(
+                              '[Reserva] Resultados count: ${results.length}');
+                          for (int i = 0; i < results.length; i++) {
+                            debugPrint(
+                                '[Reserva] results[$i] keys: ${results[i].keys.toList()}');
+                          }
+                          if (results.isNotEmpty &&
+                              results[0]['document'] != null) {
+                            final doc = results[0]['document'];
+                            final docId =
+                                (doc['name'] as String).split('/').last;
+                            foundData = _convertFirestoreMap(doc);
+                            foundData['id'] = docId;
+                            debugPrint(
+                                '[Reserva] ✅ Encontrada: docId=$docId code=${foundData['code']}');
+                          } else {
+                            debugPrint(
+                                '[Reserva] ❌ Sin resultados (document null en todos)');
+                          }
+                        } else {
+                          debugPrint(
+                              '[Reserva] ❌ runQuery falló con ${response.statusCode}');
+                        }
+
+                        // ── PLAN B: listDocuments ─────────────────────────────
+                        // Si runQuery no encontró nada (por error o resultado vacío),
+                        // listamos todos los docs de la subcolección y filtramos en cliente.
+                        if (foundData == null) {
+                          debugPrint('[Reserva] Plan B: GET listDocuments');
+                          final listUrl =
+                              'https://firestore.googleapis.com/v1/projects/$_projectId/databases/(default)/documents/reservaciones/$providerId/reservas?key=$apiKey&pageSize=300';
+                          final listResponse = await http
+                              .get(Uri.parse(listUrl))
+                              .timeout(const Duration(seconds: 12));
+                          debugPrint(
+                              '[Reserva] Plan B status: ${listResponse.statusCode}');
+                          if (listResponse.statusCode == 200) {
+                            final listData = jsonDecode(listResponse.body);
+                            final docs = listData['documents'] as List? ?? [];
+                            debugPrint(
+                                '[Reserva] Plan B docs count: ${docs.length}');
+                            for (final doc in docs) {
+                              final converted = _convertFirestoreMap(doc);
+                              final docCode =
+                                  converted['code']?.toString() ?? '';
+                              debugPrint(
+                                  '[Reserva] Plan B checking code=$docCode');
+                              if (docCode == code) {
+                                final docId =
+                                    (doc['name'] as String).split('/').last;
+                                foundData = converted;
+                                foundData['id'] = docId;
+                                debugPrint(
+                                    '[Reserva] ✅ Plan B encontrado: docId=$docId');
+                                break;
+                              }
+                            }
+                            if (foundData == null) {
+                              debugPrint(
+                                  '[Reserva] ❌ Plan B: código no existe en ${docs.length} docs');
+                            }
+                          } else {
+                            debugPrint(
+                                '[Reserva] ❌ Plan B error: ${listResponse.body}');
+                          }
+                        }
+
+                        if (!mounted) return;
+                        nav.pop(); // 🔥 Usamos la variable segura que capturamos arriba
+
+                        if (foundData != null) {
+                          _showReservationDetail(context, foundData);
+                        } else {
+                          // Mensaje amigable — no un snackbar genérico
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => Dialog(
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20)),
+                              child: Padding(
+                                padding: const EdgeInsets.all(28),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.search_off_rounded,
+                                        size: 56, color: Colors.grey[400]),
+                                    const SizedBox(height: 16),
+                                    Text('Código no encontrado',
+                                        style: TextStyle(
+                                            fontFamily: 'Poppins',
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 18,
+                                            color: primaryColor)),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                        'No encontramos ninguna reserva con el código "$code". '
+                                        'Verifica que lo hayas escrito correctamente.',
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                            fontFamily: 'Poppins',
+                                            color: Colors.black54,
+                                            fontSize: 13)),
+                                    const SizedBox(height: 24),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton(
+                                        onPressed: () => Navigator.pop(ctx),
+                                        style: ElevatedButton.styleFrom(
+                                            backgroundColor: primaryColor,
+                                            shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(12)),
+                                            padding: const EdgeInsets.symmetric(
+                                                vertical: 12)),
+                                        child: const Text('Intentar de nuevo',
+                                            style: TextStyle(
+                                                color: Colors.white,
+                                                fontFamily: 'Poppins')),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                      } catch (e, stack) {
+                        debugPrint('[Reserva] EXCEPCIÓN: $e');
+                        debugPrint('[Reserva] Stack: $stack');
+                        if (!mounted) return;
+                        setDialogState(() {
+                          isSearching = false;
+                          errorMsg =
+                              "Error de conexión. Verifica tu internet e intenta de nuevo.";
+                        });
+                      }
+                    },
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10))),
+              child:
+                  const Text("Buscar", style: TextStyle(color: Colors.white)),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text("Cancelar", style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final code = searchCtrl.text.trim();
-              if (code.isEmpty) return;
-
-              // 1. Cerrar el diálogo de input
-              Navigator.pop(dialogContext);
-
-              // 2. Mostrar carga
-              showDialog(
-                context: context,
-                barrierDismissible: false,
-                builder: (loadingContext) => const Center(),
-              );
-
-              try {
-                final query = await FirebaseFirestore.instance
-                    .collection('reservaciones')
-                    .doc(providerId)
-                    .collection('reservas')
-                    .where('code', isEqualTo: code)
-                    .limit(1)
-                    .get();
-
-                // 3. Cerrar carga (Usamos el context del State, es lo más seguro aquí)
-                if (mounted) Navigator.pop(context);
-
-                if (query.docs.isNotEmpty) {
-                  final data = query.docs.first.data();
-                  // 4. Mostrar detalle (Sin rootNavigator forzado)
-                  if (mounted) _showReservationDetail(context, data);
-                } else {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content:
-                              Text("No se encontró reserva con ese código.")),
-                    );
-                  }
-                }
-              } catch (e) {
-                // Si falla, intentamos cerrar la carga
-                if (mounted) Navigator.pop(context);
-                debugPrint("Error búsqueda: $e");
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: primaryColor,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-            child: const Text("Buscar", style: TextStyle(color: Colors.white)),
-          ),
-        ],
       ),
     );
   }
 
-  // --- DIÁLOGO DE DETALLE ---
+  // --- DIÁLOGO DE DETALLE DE RESERVA ---
   void _showReservationDetail(BuildContext context, Map<String, dynamic> data) {
-    // Calculamos datos básicos
-    final double total = (data['totalPlanPrice'] ?? 0).toDouble();
-    final double paid = (data['amountPaid'] ?? 0).toDouble();
-    final String status = data['estado'] ?? 'pendiente';
-    final bool isVerified = status == 'verificado';
-    final String qrData = data['code'] ?? '';
+    double total = 0.0;
+    double paid = 0.0;
 
-    // API para QR
+    if (data['totalPlanPrice'] is num) {
+      total = (data['totalPlanPrice'] as num).toDouble();
+    }
+    if (data['amountPaid'] is num) {
+      paid = (data['amountPaid'] as num).toDouble();
+    }
+
+    final String status = data['estado']?.toString() ?? 'pendiente';
+    final bool isVerified = status == 'verificado';
+    final String qrData = data['code']?.toString() ?? '';
     final String qrUrl =
         "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=$qrData&color=113049";
 
@@ -206,81 +575,67 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
       context: context,
       barrierDismissible: true,
       builder: (ctx) {
-        // Usamos 'ctx' para el contexto del diálogo
         return Dialog(
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          // Importante: Clip para que el contenido no se salga de los bordes redondeados
           clipBehavior: Clip.antiAlias,
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // --- HEADER CON BOTÓN DE CERRAR ---
                 Padding(
                   padding: const EdgeInsets.fromLTRB(24, 20, 20, 10),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text("Detalle de Reserva",
+                      Text("Detalle de reserva",
                           style: TextStyle(
                               fontFamily: 'Poppins',
                               fontWeight: FontWeight.bold,
                               fontSize: 18,
                               color: primaryColor)),
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.grey),
-                        // Acción simple: cerrar este contexto (el diálogo)
-                        onPressed: () => Navigator.pop(ctx),
-                      )
+                          icon: const Icon(Icons.close, color: Colors.grey),
+                          onPressed: () => Navigator.pop(ctx))
                     ],
                   ),
                 ),
                 const Divider(height: 1),
-
                 Padding(
                   padding: const EdgeInsets.all(24),
                   child: Column(
                     children: [
-                      // Status
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: isVerified
-                              ? Colors.green.withValues(alpha: (0.1))
-                              : Colors.orange.withValues(alpha: (0.1)),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          isVerified ? "VERIFICADO" : "PENDIENTE",
-                          style: TextStyle(
-                              fontFamily: 'Poppins',
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                              color: isVerified ? Colors.green : Colors.orange),
-                        ),
+                            color: isVerified
+                                ? Colors.green.withValues(alpha: 0.1)
+                                : Colors.orange.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(20)),
+                        child: Text(isVerified ? "VERIFICADO" : "PENDIENTE",
+                            style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                                color:
+                                    isVerified ? Colors.green : Colors.orange)),
                       ),
                       const SizedBox(height: 20),
-
-                      // Info Principal
-                      Text(data['planName'] ?? 'Actividad',
+                      Text(data['planName']?.toString() ?? 'Actividad',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                               fontFamily: 'Poppins',
                               fontSize: 16,
                               fontWeight: FontWeight.w600)),
                       const SizedBox(height: 5),
-                      Text(data['planLocation'] ?? '',
+                      Text(data['planLocation']?.toString() ?? '',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                               fontFamily: 'Poppins',
                               fontSize: 12,
                               color: Colors.grey[600])),
-
                       const SizedBox(height: 20),
-
-                      // QR Code
                       Container(
                         padding: const EdgeInsets.all(15),
                         decoration: BoxDecoration(
@@ -295,41 +650,33 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
                             ]),
                         child: Column(
                           children: [
-                            Image.network(
-                              qrUrl,
-                              width: 140,
-                              height: 140,
-                              loadingBuilder: (c, child, p) {
-                                if (p == null) return child;
-                                return const SizedBox(
-                                    width: 140, height: 140, child: Center());
-                              },
-                              errorBuilder: (c, o, s) =>
-                                  const Icon(Icons.error),
-                            ),
+                            Image.network(qrUrl,
+                                width: 140,
+                                height: 140,
+                                loadingBuilder: (c, child, p) => p == null
+                                    ? child
+                                    : const SizedBox(
+                                        width: 140,
+                                        height: 140,
+                                        child: Center()),
+                                errorBuilder: (c, o, s) =>
+                                    const Icon(Icons.error)),
                             const SizedBox(height: 10),
-                            Text(
-                              qrData,
-                              style: TextStyle(
-                                  fontFamily: 'Poppins',
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 20,
-                                  letterSpacing: 3,
-                                  color: primaryColor),
-                            ),
+                            Text(qrData,
+                                style: TextStyle(
+                                    fontFamily: 'Poppins',
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 20,
+                                    letterSpacing: 3,
+                                    color: primaryColor)),
                             const SizedBox(height: 4),
-                            const Text(
-                              "Muestra este código al llegar",
-                              style:
-                                  TextStyle(fontSize: 10, color: Colors.grey),
-                            )
+                            const Text("Muestra este código al llegar",
+                                style:
+                                    TextStyle(fontSize: 10, color: Colors.grey))
                           ],
                         ),
                       ),
-
                       const SizedBox(height: 20),
-
-                      // Finanzas
                       Container(
                         padding: const EdgeInsets.all(15),
                         decoration: BoxDecoration(
@@ -382,17 +729,26 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
     );
   }
 
-  void _toggleFollow(String providerId, Map<String, dynamic> providerData) {
-    // 1. Caso Invitado
+  // --- HELPER: detecta guest tanto en web ('guest' string) como en la app (anónimo) ---
+  bool get _isGuest {
     if (widget.currentUserId == 'guest' || widget.currentUserId.isEmpty) {
+      return true;
+    }
+    try {
+      return FirebaseAuth.instance.currentUser?.isAnonymous ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  // --- SEGUIR PROVEEDOR ---
+  void _toggleFollow(String providerId, Map<String, dynamic> providerData) {
+    if (_isGuest) {
       _showLoginDialog();
       return;
     }
-
     if (_followedProvidersBox == null) return;
 
-    // NOTA: NO USAMOS setState() AQUÍ.
-    // Usamos ValueListenableBuilder en el botón para evitar reconstruir toda la pantalla.
     if (_followedProvidersBox!.containsKey(providerId)) {
       _followedProvidersBox!.delete(providerId);
     } else {
@@ -405,26 +761,20 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
     }
   }
 
-  // --- LÓGICA DE MENSAJERÍA (ROBUSTA) ---
+  // --- INICIAR CHAT ---
   void _handleMessageTap(
       String providerId, Map<String, dynamic> providerData) async {
-    // 1. Caso INVITADO
-    if (widget.currentUserId == 'guest' || widget.currentUserId.isEmpty) {
+    if (_isGuest) {
       _showLoginDialog();
       return;
     }
-
-    // 2. Indicador de carga
     showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const Center(),
-    );
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => const Center());
 
     try {
       final chatService = ChatService();
-
-      // Obtener datos usuario
       final currentUserDoc = await FirebaseFirestore.instance
           .collection('usuarios')
           .doc(widget.currentUserId)
@@ -432,52 +782,42 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
 
       if (!currentUserDoc.exists) throw "Usuario no encontrado";
 
-      final currentUserData = currentUserDoc.data() ?? {};
+      final currentUserData = {...(currentUserDoc.data() ?? {})};
 
-      // Crear Chat con Timeout
       final chatId = await chatService.getOrCreateChat(
         userId: widget.currentUserId,
         supplierId: providerId,
         userData: {
-          'nombre': currentUserData['name'] ?? 'Usuario',
-          'imagen': currentUserData['imagen'] ?? '',
+          'nombre': currentUserData['name']?.toString() ?? 'Usuario',
+          'imagen': currentUserData['imagen']?.toString() ?? '',
         },
         supplierData: {
-          'nombre': providerData['name'] ?? 'Proveedor',
-          'imagen': providerData['imagen'] ?? '',
+          'nombre': providerData['name']?.toString() ?? 'Proveedor',
+          'imagen': providerData['imagen']?.toString() ?? '',
         },
       ).timeout(const Duration(seconds: 10));
 
-      // 3. Cerrar Diálogo (ROOT NAVIGATOR)
-      if (mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
-      }
-
-      // 4. Navegar
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
       if (mounted) {
         Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ChatDetailScreen(
-              chatId: chatId,
-              otherName: providerData['name'] ?? 'Proveedor',
-              otherImage: providerData['imagen'] ?? '',
-              currentUserId: widget.currentUserId,
-            ),
-          ),
-        );
+            context,
+            MaterialPageRoute(
+                builder: (context) => ChatDetailScreen(
+                    chatId: chatId,
+                    otherName: providerData['name']?.toString() ?? 'Proveedor',
+                    otherImage: providerData['imagen']?.toString() ?? '',
+                    currentUserId: widget.currentUserId)));
       }
     } catch (e) {
-      // Cerrar diálogo si hay error
       if (mounted) {
         Navigator.of(context, rootNavigator: true).pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error al abrir el chat: $e")),
-        );
+            SnackBar(content: Text("Error al abrir el chat: $e")));
       }
     }
   }
 
+  // --- DIÁLOGO DE LOGIN ---
   void _showLoginDialog() {
     showDialog(
       context: context,
@@ -491,51 +831,42 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
               const Icon(HugeIcons.strokeRoundedUserCircle,
                   size: 50, color: Color.fromRGBO(17, 48, 73, 1)),
               const SizedBox(height: 15),
-              const Text(
-                "Inicia Sesión",
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Color.fromRGBO(17, 48, 73, 1),
-                ),
-              ),
+              const Text("Inicia sesión",
+                  style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color.fromRGBO(17, 48, 73, 1))),
               const SizedBox(height: 10),
               const Text(
-                "Para contactar o seguir al proveedor necesitas una cuenta en Biqoe.",
-                textAlign: TextAlign.center,
-                style: TextStyle(fontFamily: 'Poppins', color: Colors.grey),
-              ),
+                  "Para contactar o seguir al proveedor necesitas una cuenta en Biqoe.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Poppins', color: Colors.grey)),
               const SizedBox(height: 25),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
-                    Navigator.pop(context); // Cerrar diálogo
-                    // Navegar al Login
-                    Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const LoginFormScreen()));
+                    Navigator.pop(context);
+                    Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const LoginScreen()));
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: const Text("Ir al Login",
+                      backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12))),
+                  child: const Text("Ir al login",
                       style: TextStyle(
                           color: Colors.white, fontFamily: 'Poppins')),
                 ),
               ),
               const SizedBox(height: 10),
               TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("Cancelar",
-                    style:
-                        TextStyle(color: Colors.grey, fontFamily: 'Poppins')),
-              )
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Cancelar",
+                      style:
+                          TextStyle(color: Colors.grey, fontFamily: 'Poppins')))
             ],
           ),
         ),
@@ -543,121 +874,154 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
     );
   }
 
+  // --- BUILD PRINCIPAL ---
   @override
   Widget build(BuildContext context) {
+    if (_initError != null) {
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: SelectableText('Error: $_initError'),
+          ),
+        ),
+      );
+    }
+
     final screenWidth = MediaQuery.of(context).size.width;
 
-    return FutureBuilder<QuerySnapshot>(
+    return FutureBuilder<Map<String, dynamic>?>(
       future: _profileFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center());
-        }
+        try {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(
+                body: Center(
+                    child: CircularProgressIndicator(
+                        color: Color.fromRGBO(17, 48, 73, 1))));
+          }
 
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          if (snapshot.hasError) {
+            return Scaffold(
+                appBar: AppBar(
+                    backgroundColor: Colors.transparent,
+                    elevation: 0,
+                    leading: const BackButton(color: Colors.black)),
+                body: Center(
+                  child: Text('Error: ${snapshot.error}'),
+                ));
+          }
+
+          final userData = snapshot.data;
+          if (userData == null || userData.isEmpty) {
+            return Scaffold(
+                appBar: AppBar(
+                    backgroundColor: Colors.transparent,
+                    elevation: 0,
+                    leading: const BackButton(color: Colors.black)),
+                body: _buildNotFoundState());
+          }
+
+          final String realProviderId = userData['id'] ?? '';
+
           return Scaffold(
+            backgroundColor: backgroundColor,
+            extendBodyBehindAppBar: true,
             appBar: AppBar(
-                backgroundColor: Colors.transparent,
-                elevation: 0,
-                leading: const BackButton(color: Colors.black)),
-            body: _buildNotFoundState(),
-          );
-        }
-
-        // DATOS DEL PROVEEDOR
-        final userDoc = snapshot.data!.docs.first;
-        final userData = userDoc.data() as Map<String, dynamic>;
-        final String realProviderId = userDoc.id;
-
-        return Scaffold(
-          backgroundColor: backgroundColor,
-          extendBodyBehindAppBar: true,
-          appBar: AppBar(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            leading: Padding(
-              padding: const EdgeInsets.only(left: 10, top: 10),
-              child: _buildCircleButton(
-                icon: Icons.arrow_back,
-                color: Colors.black,
-                onPressed: () {
-                  if (Navigator.canPop(context)) {
-                    Navigator.pop(context);
-                  }
-                },
-              ),
-            ),
-            actions: [
-              // --- BOTÓN SEGUIR (OPTIMIZADO CON ValueListenableBuilder) ---
-              if (_followedProvidersBox != null)
-                ValueListenableBuilder(
-                  valueListenable: _followedProvidersBox!.listenable(),
-                  builder: (context, Box box, child) {
-                    final bool isFollowing = box.containsKey(realProviderId);
-
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 10, right: 10),
-                      child: _buildCircleButton(
-                        // Íconos iguales a la lista de proveedores
-                        icon: isFollowing
-                            ? Icons.how_to_reg // Check azul
-                            : Icons.person_add_alt_1, // Agregar gris
-                        // Colores iguales a la lista
-                        color: isFollowing ? primaryColor : Colors.grey,
-                        onPressed: () =>
-                            _toggleFollow(realProviderId, userData),
-                      ),
-                    );
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              leading: Padding(
+                padding: const EdgeInsets.only(left: 10, top: 10),
+                child: _buildCircleButton(
+                  icon: Icons.arrow_back,
+                  color: Colors.black,
+                  onPressed: () {
+                    // Si es guest, mostrar diálogo de login
+                    if (_isGuest) {
+                      _showLoginDialog();
+                    } else {
+                      if (Navigator.canPop(context)) Navigator.pop(context);
+                    }
                   },
                 ),
-
-              // BOTÓN MENSAJE
-              Padding(
-                padding: const EdgeInsets.only(right: 20, top: 10),
-                child: _buildCircleButton(
-                  icon: HugeIcons.strokeRoundedMessage01,
-                  color: Colors.black,
-                  onPressed: () => _handleMessageTap(realProviderId, userData),
-                ),
               ),
-            ],
-          ),
-          body: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            child: Column(
-              children: [
-                _buildProviderHeader(screenWidth, userData, realProviderId),
-                const SizedBox(height: 20),
-                _buildProviderActivities(screenWidth, realProviderId),
-                const SizedBox(height: 50),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 40),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text("Experiencia facilitada por ",
-                          style: TextStyle(
-                              color: Colors.grey[400],
-                              fontFamily: 'Poppins',
-                              fontSize: 12)),
-                      const Text("Biqoe",
-                          style: TextStyle(
-                              color: Color.fromRGBO(17, 48, 73, 1),
-                              fontFamily: 'Poppins',
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13)),
-                    ],
+              actions: [
+                if (_followedProvidersBox != null)
+                  ValueListenableBuilder(
+                    valueListenable: _followedProvidersBox!.listenable(),
+                    builder: (context, box, child) {
+                      final bool isFollowing =
+                          _followedProvidersBox!.containsKey(realProviderId);
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 10, right: 10),
+                        child: _buildCircleButton(
+                          icon: isFollowing
+                              ? Icons.how_to_reg
+                              : Icons.person_add_alt_1,
+                          color: isFollowing ? primaryColor : Colors.grey,
+                          onPressed: () =>
+                              _toggleFollow(realProviderId, userData),
+                        ),
+                      );
+                    },
                   ),
-                )
+                Padding(
+                  padding: const EdgeInsets.only(right: 20, top: 10),
+                  child: _buildCircleButton(
+                      icon: HugeIcons.strokeRoundedMessage01,
+                      color: Colors.black,
+                      onPressed: () =>
+                          _handleMessageTap(realProviderId, userData)),
+                ),
               ],
             ),
-          ),
-        );
+            body: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                children: [
+                  _buildProviderHeader(screenWidth, userData, realProviderId),
+                  const SizedBox(height: 20),
+                  _buildProviderActivities(screenWidth, realProviderId),
+                  const SizedBox(height: 50),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 40),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text("Experiencia facilitada por ",
+                            style: TextStyle(
+                                color: Colors.grey[400],
+                                fontFamily: 'Poppins',
+                                fontSize: 12)),
+                        const Text("Biqoe",
+                            style: TextStyle(
+                                color: Color.fromRGBO(17, 48, 73, 1),
+                                fontFamily: 'Poppins',
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13)),
+                      ],
+                    ),
+                  )
+                ],
+              ),
+            ),
+          );
+        } catch (e, stack) {
+          debugPrint('ERROR EN FUTUREBUILDER: $e\n$stack');
+          return Scaffold(
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: SelectableText('Error en FutureBuilder: $e'),
+              ),
+            ),
+          );
+        }
       },
     );
   }
 
-  // --- WIDGET BOTÓN CIRCULAR ---
+  // --- BOTÓN CIRCULAR ---
   Widget _buildCircleButton(
       {required IconData icon,
       required VoidCallback onPressed,
@@ -665,24 +1029,21 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
     return Container(
       margin: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha((0.1 * 200).round()),
-            blurRadius: 2,
-            spreadRadius: 0.01,
-            offset: const Offset(0, 0.001),
-          )
-        ],
-      ),
+          color: Colors.white,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withAlpha((0.1 * 200).round()),
+                blurRadius: 2,
+                spreadRadius: 0.01,
+                offset: const Offset(0, 0.001))
+          ]),
       child: IconButton(
-        icon: Icon(icon, color: color, size: 22),
-        onPressed: onPressed,
-      ),
+          icon: Icon(icon, color: color, size: 22), onPressed: onPressed),
     );
   }
 
+  // --- ESTADO NO ENCONTRADO ---
   Widget _buildNotFoundState() {
     return Center(
       child: Column(
@@ -690,25 +1051,23 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
         children: [
           Icon(HugeIcons.strokeRoundedSad01, size: 60, color: Colors.grey[300]),
           const SizedBox(height: 20),
-          Text(
-            "Proveedor no encontrado",
-            style: TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey[600],
-            ),
-          ),
+          Text("Proveedor no encontrado",
+              style: TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[600])),
         ],
       ),
     );
   }
 
+  // --- CABECERA DEL PROVEEDOR ---
   Widget _buildProviderHeader(
       double screenWidth, Map<String, dynamic> data, String providerId) {
-    final String name = data['name'] ?? 'Proveedor';
-    final String imageUrl = data['imagen'] ?? '';
-    final String description = data['descripcion'] ?? '';
+    final String name = data['name']?.toString() ?? 'Proveedor';
+    final String imageUrl = data['imagen']?.toString() ?? '';
+    final String description = data['descripcion']?.toString() ?? '';
 
     return Container(
       width: double.infinity,
@@ -716,20 +1075,16 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(35),
-          bottomRight: Radius.circular(35),
-        ),
+            bottomLeft: Radius.circular(35), bottomRight: Radius.circular(35)),
         boxShadow: [
           BoxShadow(
-            color: primaryColor.withValues(alpha: 0.04),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
+              color: primaryColor.withValues(alpha: 0.04),
+              blurRadius: 20,
+              offset: const Offset(0, 10))
         ],
       ),
       child: Column(
         children: [
-          // --- AVATAR ---
           Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
@@ -754,101 +1109,79 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
                         placeholder: (context, url) =>
                             Container(color: Colors.grey[100]),
                         errorWidget: (context, url, error) => Container(
-                          color: Colors.grey[100],
-                          child: Icon(Icons.person,
-                              size: 40, color: Colors.grey[300]),
-                        ),
-                      )
+                            color: Colors.grey[100],
+                            child: Icon(Icons.person,
+                                size: 40, color: Colors.grey[300])))
                     : Container(
                         color: Colors.grey[100],
                         child: Center(
-                          child: Text(
-                            name.isNotEmpty ? name[0].toUpperCase() : '?',
-                            style: TextStyle(
-                                fontSize: 35,
-                                color: primaryColor,
-                                fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
+                            child: Text(
+                                name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                style: TextStyle(
+                                    fontSize: 35,
+                                    color: primaryColor,
+                                    fontWeight: FontWeight.bold)))),
               ),
             ),
           ),
           const SizedBox(height: 15),
-
-          // --- NOMBRE Y VERIFICADO ---
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Flexible(
-                child: Text(
-                  name,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Color.fromRGBO(17, 48, 73, 1),
-                    letterSpacing: -0.5,
-                  ),
-                ),
-              ),
+                  child: Text(name,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Color.fromRGBO(17, 48, 73, 1),
+                          letterSpacing: -0.5))),
               if (data['verified'] == true) ...[
                 const SizedBox(width: 5),
-                const Icon(Icons.verified, color: Colors.blueAccent, size: 20),
+                const Icon(Icons.verified, color: Colors.blueAccent, size: 20)
               ]
             ],
           ),
           const SizedBox(height: 10),
-
-          // --- DESCRIPCIÓN ---
           if (description.isNotEmpty)
             MarkdownBody(
-              data: description,
-              styleSheet: MarkdownStyleSheet(
-                p: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: 13,
-                    color: Colors.grey[600],
-                    height: 1.5),
-                strong: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey[800]),
-                textAlign: WrapAlignment.center,
-                pPadding: EdgeInsets.zero,
-              ),
-            ),
-
-          // --- BARRA DE BÚSQUEDA DE RESERVA ---
+                data: description,
+                styleSheet: MarkdownStyleSheet(
+                    p: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 13,
+                        color: Colors.grey[600],
+                        height: 1.5),
+                    strong: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey[800]),
+                    textAlign: WrapAlignment.center,
+                    pPadding: EdgeInsets.zero)),
           const SizedBox(height: 20),
           GestureDetector(
-            // USAMOS EL providerId QUE PASAMOS COMO ARGUMENTO
             onTap: () => _showBookingSearchDialog(providerId),
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: const Color(0xFFF5F7FA),
-                borderRadius: BorderRadius.circular(30),
-                border: Border.all(color: const Color(0xFFEEEEEE)),
-              ),
+                  color: const Color(0xFFF5F7FA),
+                  borderRadius: BorderRadius.circular(30),
+                  border: Border.all(color: const Color(0xFFEEEEEE))),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(HugeIcons.strokeRoundedSearch01,
                       size: 18, color: Colors.grey[500]),
                   const SizedBox(width: 8),
-                  Text(
-                    "¿Ya reservaste? Busca tu código aquí",
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 12,
-                      color: Colors.grey[500],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
+                  Text("¿Ya reservaste? Busca tu código aquí",
+                      style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 12,
+                          color: Colors.grey[500],
+                          fontWeight: FontWeight.w500)),
                 ],
               ),
             ),
@@ -858,127 +1191,171 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
     );
   }
 
+  // --- LISTA DE ACTIVIDADES (USANDO HTTP) ---
   Widget _buildProviderActivities(double screenWidth, String providerId) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 25),
-          child: Row(
-            children: [
-              Container(
-                width: 4,
-                height: 24,
-                decoration: BoxDecoration(
-                    color: primaryColor,
-                    borderRadius: BorderRadius.circular(2)),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                "Actividades disponibles",
-                style: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey[800]),
-              ),
-            ],
+    try {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 25),
+            child: Row(
+              children: [
+                Container(
+                    width: 4,
+                    height: 24,
+                    decoration: BoxDecoration(
+                        color: primaryColor,
+                        borderRadius: BorderRadius.circular(2))),
+                const SizedBox(width: 10),
+                Text("Actividades disponibles",
+                    style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey[800])),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 15),
-        StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('destinos')
-              .where('supplierId', isEqualTo: providerId)
-              .snapshots(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                  child: Padding(
-                padding: EdgeInsets.all(20),
-              ));
-            }
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-              return Padding(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 40, horizontal: 30),
-                child: Center(
-                  child: Column(
-                    children: [
-                      Icon(HugeIcons.strokeRoundedTicket01,
-                          size: 40, color: Colors.grey[300]),
-                      const SizedBox(height: 10),
-                      Text("No hay actividades activas.",
-                          style: TextStyle(
-                              fontFamily: 'Poppins', color: Colors.grey[400])),
-                    ],
-                  ),
-                ),
-              );
-            }
-            return ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: snapshot.data!.docs.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 20),
-              itemBuilder: (context, index) {
-                final doc = snapshot.data!.docs[index];
-                final data = doc.data() as Map<String, dynamic>;
-
-                // AGREGAR ESTA LÍNEA AQUÍ
-                data['id'] = doc.id; // <--- ESTA ES LA CORRECCIÓN CRÍTICA
-
-                final paquetes = data['paquetes'] as List<dynamic>? ?? [];
-                double minPrice = 0.0;
-                if (paquetes.isNotEmpty) {
-                  final precios = paquetes
-                      .where((p) => p['precio'] != null)
-                      .map<double>((p) => (p['precio'] as num).toDouble())
-                      .toList();
-                  if (precios.isNotEmpty) {
-                    minPrice = precios.reduce((a, b) => a < b ? a : b);
-                  }
+          const SizedBox(height: 15),
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: _getActivitiesBySupplierViaRest(providerId),
+            builder: (context, snapshot) {
+              try {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                      child: Padding(
+                          padding: EdgeInsets.all(20),
+                          child: CircularProgressIndicator()));
                 }
-                String displayImage = '';
-                if (data['imagenes'] is List &&
-                    (data['imagenes'] as List).isNotEmpty) {
-                  displayImage = data['imagenes'][0];
-                } else if (data['imagen'] is String) {
-                  displayImage = data['imagen'];
-                } else if (data['imagen'] is List &&
-                    (data['imagen'] as List).isNotEmpty) {
-                  displayImage = data['imagen'][0];
+                if (snapshot.hasError) {
+                  return Center(
+                    child:
+                        Text('Error al cargar actividades: ${snapshot.error}'),
+                  );
                 }
-
-                return GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => DestinationDetailScreen(
-                          destino: data,
-                          userId: widget.currentUserId,
-                        ),
+                final activities = snapshot.data ?? [];
+                if (activities.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 40, horizontal: 30),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(HugeIcons.strokeRoundedTicket01,
+                              size: 40, color: Colors.grey[300]),
+                          const SizedBox(height: 10),
+                          Text("No hay actividades activas.",
+                              style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  color: Colors.grey[400])),
+                        ],
                       ),
-                    );
+                    ),
+                  );
+                }
+
+                return ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: activities.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: 20),
+                  itemBuilder: (context, index) {
+                    try {
+                      final data = activities[index];
+
+                      // Calcular precio mínimo desde paquetes
+                      double minPrice = 0.0;
+                      final rawPaquetes = data['paquetes'];
+                      if (rawPaquetes is List) {
+                        List<double> precios = [];
+                        for (var p in rawPaquetes) {
+                          if (p is Map && p['precio'] != null) {
+                            var val = p['precio'];
+                            if (val is num) {
+                              precios.add(val.toDouble());
+                            } else if (val is String) {
+                              precios.add(double.tryParse(val) ?? 0.0);
+                            }
+                          }
+                        }
+                        if (precios.isNotEmpty) {
+                          minPrice = precios.reduce((a, b) => a < b ? a : b);
+                        }
+                      }
+
+                      // Obtener imagen de portada
+                      String displayImage = '';
+                      final rawImagenes = data['imagenes'];
+                      final rawImagen = data['imagen'];
+
+                      if (rawImagenes is List && rawImagenes.isNotEmpty) {
+                        displayImage = rawImagenes[0].toString();
+                      } else if (rawImagen is String) {
+                        displayImage = rawImagen;
+                      } else if (rawImagen is List && rawImagen.isNotEmpty) {
+                        displayImage = rawImagen[0].toString();
+                      }
+
+                      return GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => DestinationDetailScreen(
+                                destinationId:
+                                    data['id'] ?? '', // Pasamos solo el ID
+                                userId: widget.currentUserId,
+                              ),
+                            ),
+                          );
+                        },
+                        child: ProviderActivityCard(
+                          imageUrl: displayImage,
+                          title: data['nombre']?.toString() ??
+                              'Actividad sin nombre',
+                          location: data['lugar']?.toString() ??
+                              (data['estado']?.toString() ?? ''),
+                          price: minPrice,
+                        ),
+                      );
+                    } catch (e, stack) {
+                      debugPrint('ERROR EN ITEM BUILDER: $e\n$stack');
+                      return Container(
+                        height: 100,
+                        color: Colors.red.shade100,
+                        child: Center(
+                          child: Text(
+                            'Error al mostrar actividad: $e',
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        ),
+                      );
+                    }
                   },
-                  child: ProviderActivityCard(
-                    imageUrl: displayImage,
-                    title: data['nombre'] ?? 'Actividad sin nombre',
-                    location: data['lugar'] ?? (data['estado'] ?? ''),
-                    price: minPrice,
-                  ),
                 );
-              },
-            );
-          },
-        ),
-      ],
-    );
+              } catch (e, stack) {
+                debugPrint('ERROR EN FUTUREBUILDER DE ACTIVIDADES: $e\n$stack');
+                return Center(
+                  child: Text('Error cargando actividades: $e'),
+                );
+              }
+            },
+          ),
+        ],
+      );
+    } catch (e, stack) {
+      debugPrint('ERROR EN _buildProviderActivities: $e\n$stack');
+      return Center(
+        child: Text('Error cargando actividades: $e'),
+      );
+    }
   }
 }
 
+// --- TARJETA DE ACTIVIDAD (SIN CAMBIOS) ---
 class ProviderActivityCard extends StatelessWidget {
   final String imageUrl;
   final String title;
@@ -995,47 +1372,46 @@ class ProviderActivityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 220,
+      height: 270,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withAlpha((0.06 * 255).round()),
-              blurRadius: 15,
-              offset: const Offset(0, 5))
-        ],
-      ),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withAlpha((0.06 * 255).round()),
+                blurRadius: 15,
+                offset: const Offset(0, 5))
+          ]),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: Stack(
           children: [
             Positioned.fill(
-              child: imageUrl.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      fit: BoxFit.cover,
-                      placeholder: (c, u) => Container(color: Colors.grey[100]),
-                      errorWidget: (c, u, e) =>
-                          Container(color: Colors.grey[200]))
-                  : Container(color: Colors.grey[200]),
-            ),
+                child: imageUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: imageUrl,
+                        fit: BoxFit.cover,
+                        placeholder: (c, u) =>
+                            Container(color: Colors.grey[100]),
+                        errorWidget: (c, u, e) =>
+                            Container(color: Colors.grey[200]))
+                    : Container(color: Colors.grey[200])),
             Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withAlpha((0.1 * 255).round()),
-                      Colors.black.withAlpha((0.8 * 255).round())
-                    ],
-                    stops: const [0.5, 0.7, 1.0],
-                  ),
-                ),
-              ),
-            ),
+                child: DecoratedBox(
+                    decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                  Colors.transparent,
+                  Colors.black.withAlpha((0.1 * 255).round()),
+                  Colors.black.withAlpha((0.75 * 255).round())
+                ],
+                            stops: const [
+                  0.4,
+                  0.65,
+                  1.0
+                ])))),
             Positioned(
               bottom: 15,
               left: 15,
@@ -1080,7 +1456,7 @@ class ProviderActivityCard extends StatelessWidget {
                       decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(10)),
-                      child: Text('€${price.toStringAsFixed(0)}',
+                      child: Text('\$${price.toStringAsFixed(0)}',
                           style: const TextStyle(
                               color: Color.fromRGBO(17, 48, 73, 1),
                               fontWeight: FontWeight.w800,

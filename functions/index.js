@@ -29,3 +29,21 @@ exports.sendNewReservationNotification = functions.firestore
             });
           });
     });
+
+// Nueva función para obtener usuario por slug
+exports.getUserBySlug = functions.https.onCall(async (data, context) => {
+  const slug = data.slug;
+  if (!slug) {
+    throw new functions.https.HttpsError("invalid-argument", "Se requiere slug");
+  }
+  const snapshot = await admin.firestore()
+      .collection("usuarios")
+      .where("slug", "==", slug)
+      .limit(1)
+      .get();
+  if (snapshot.empty) {
+    return null;
+  }
+  const doc = snapshot.docs[0];
+  return { id: doc.id, ...doc.data() };
+});

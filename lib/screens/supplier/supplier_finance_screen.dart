@@ -9,6 +9,20 @@ import 'supplier_verify_payments_screen.dart';
 import '../../services/supplier_service.dart';
 import '../../services/finance_service.dart';
 
+// Helper: convierte Timestamp, String ISO o DateTime a DateTime de forma segura.
+// Necesario porque reservas creadas vía REST (Safari web) guardan fechas como String ISO.
+DateTime _parseDate(dynamic value, {DateTime? fallback}) {
+  if (value == null) return fallback ?? DateTime(2000);
+  if (value is DateTime) return value;
+  if (value is Timestamp) return value.toDate();
+  if (value is String && value.isNotEmpty) {
+    try {
+      return DateTime.parse(value);
+    } catch (_) {}
+  }
+  return fallback ?? DateTime(2000);
+}
+
 // COLORES
 const Color kPrimaryColor = Color.fromRGBO(17, 48, 73, 1);
 const Color kIncomeColor = Color(0xFF34C759); // Verde
@@ -97,10 +111,7 @@ class _SupplierFinanceScreenState extends State<SupplierFinanceScreen>
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: false,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
-        ),
+        automaticallyImplyLeading: false, // Sin flecha de regreso
         title: Text("Resumen",
             style: GoogleFonts.poppins(
                 color: kPrimaryColor, fontWeight: FontWeight.bold)),
@@ -190,7 +201,7 @@ class _DashboardTab extends StatelessWidget {
             for (var doc in expenseSnap.data!.docs) {
               final data = doc.data() as Map<String, dynamic>;
               final double amount = (data['monto'] ?? 0).toDouble();
-              final DateTime date = (data['fecha'] as Timestamp).toDate();
+              final DateTime date = _parseDate(data['fecha']);
               totalExpenses += amount;
 
               chartData
@@ -202,7 +213,7 @@ class _DashboardTab extends StatelessWidget {
               final data = doc.data() as Map<String, dynamic>;
               final double paid = (data['amountPaid'] ?? 0).toDouble();
               final double total = (data['totalPlanPrice'] ?? 0).toDouble();
-              final DateTime date = (data['createdAt'] as Timestamp).toDate();
+              final DateTime date = _parseDate(data['createdAt']);
 
               // Ingreso Real (Cash Flow)
               if (paid > 0) {
@@ -383,162 +394,174 @@ class _ActivitiesTab extends StatelessWidget {
                   style: GoogleFonts.poppins()));
         }
 
-        // 2. STREAM DE GASTOS (Para actualización inmediata)
+        // 2. STREAM DE GASTOS en tiempo real
         return StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('gastos')
               .where('supplierId', isEqualTo: supplierId)
               .snapshots(),
           builder: (context, expenseSnapshot) {
-            // Si cargando gastos, usamos lista vacía temporalmente para no bloquear UI
             final expenseDocs = expenseSnapshot.data?.docs ?? [];
 
-            // Usamos las transacciones estáticas SOLO para ingresos (Ventas)
-            // ya que los gastos los estamos trayendo en tiempo real arriba.
-            final incomeTransactions =
-                (financeData['transactions'] as List? ?? [])
-                    .where((tx) => tx['type'] == 'income')
-                    .toList();
+            // 3. STREAM DE INGRESOS en tiempo real — igual que _DashboardTab.
+            // Reemplaza el lookup estático en financeData['transactions'] que
+            // solo se cargaba una vez y no reflejaba ventas nuevas.
+            return StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collectionGroup('reservas')
+                  .where('supplier', isEqualTo: supplierId)
+                  .snapshots(),
+              builder: (context, reservasSnapshot) {
+                final reservasDocs = reservasSnapshot.data?.docs ?? [];
 
-            return ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: destinations.length,
-              itemBuilder: (context, index) {
-                final doc = destinations[index];
-                final dData = doc.data() as Map<String, dynamic>;
-                final String destId = doc.id;
-                final String name = dData['nombre'] ?? 'Sin nombre';
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: destinations.length,
+                  itemBuilder: (context, index) {
+                    final doc = destinations[index];
+                    final dData = doc.data() as Map<String, dynamic>;
+                    final String destId = doc.id;
+                    final String name = dData['nombre'] ?? 'Sin nombre';
 
-                double inc = 0;
-                double exp = 0;
+                    double inc = 0;
+                    double exp = 0;
 
-                // A. CALCULAR INGRESOS (Desde FinanceData - Estático pero rápido)
-                for (var tx in incomeTransactions) {
-                  // Coincidencia por nombre (O ID si lo tuvieras en reserva)
-                  if (tx['description'].toString().contains(name)) {
-                    inc += (tx['amount'] as num).toDouble();
-                  }
-                }
+                    // A. INGRESOS: cruzar cada reserva contra este destino.
+                    // Primero por destinationId (campo exacto), luego por
+                    // planName como fallback para reservas que no lo tienen.
+                    for (var rDoc in reservasDocs) {
+                      final rData = rDoc.data() as Map<String, dynamic>;
+                      final bool byId =
+                          rData['destinationId']?.toString() == destId;
+                      final bool byName =
+                          rData['planName']?.toString().contains(name) == true;
+                      if (byId || byName) {
+                        final num paid = rData['amountPaid'] ?? 0;
+                        inc += paid.toDouble();
+                      }
+                    }
 
-                // B. CALCULAR GASTOS (Desde Stream - Real Time)
-                for (var eDoc in expenseDocs) {
-                  final eData = eDoc.data() as Map<String, dynamic>;
-                  // Verificación estricta por ID
-                  if (eData['destinationId'] == destId) {
-                    exp += (eData['monto'] ?? 0).toDouble();
-                  }
-                }
+                    // B. GASTOS: por destinationId del gasto
+                    for (var eDoc in expenseDocs) {
+                      final eData = eDoc.data() as Map<String, dynamic>;
+                      if (eData['destinationId'] == destId) {
+                        exp += (eData['monto'] ?? 0).toDouble();
+                      }
+                    }
 
-                final double profit = inc - exp;
+                    final double profit = inc - exp;
 
-                return GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => _ActivityProfitabilityDetail(
-                          supplierId: supplierId,
-                          destinationId: destId,
-                          activityName: name,
-                          onDataChanged: onDataChanged,
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => _ActivityProfitabilityDetail(
+                              supplierId: supplierId,
+                              destinationId: destId,
+                              activityName: name,
+                              onDataChanged: onDataChanged,
+                            ),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.05),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4))
+                            ]),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(name,
+                                      style: GoogleFonts.poppins(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16)),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                      color: profit >= 0
+                                          ? kIncomeColor.withValues(alpha: 0.1)
+                                          : kExpenseColor.withValues(
+                                              alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(8)),
+                                  child: Text(
+                                      profit >= 0
+                                          ? "+ \$${profit.toStringAsFixed(0)}"
+                                          : "- \$${profit.abs().toStringAsFixed(0)}",
+                                      style: GoogleFonts.poppins(
+                                          color: profit >= 0
+                                              ? kIncomeColor
+                                              : kExpenseColor,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12)),
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(Icons.arrow_forward_ios,
+                                    size: 12, color: Colors.grey)
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            // Barra visual
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: Row(
+                                children: [
+                                  if (inc > 0)
+                                    Expanded(
+                                        flex: inc.toInt(),
+                                        child: Container(
+                                            height: 6, color: kIncomeColor)),
+                                  if (exp > 0)
+                                    Expanded(
+                                        flex: exp.toInt(),
+                                        child: Container(
+                                            height: 6, color: kExpenseColor)),
+                                  if (inc == 0 && exp == 0)
+                                    Expanded(
+                                        child: Container(
+                                            height: 6, color: Colors.grey[200]))
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text("Ventas: \$${inc.toStringAsFixed(0)}",
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 11, color: Colors.grey[600])),
+                                Text("Costos: \$${exp.toStringAsFixed(0)}",
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 11, color: Colors.red[300])),
+                              ],
+                            )
+                          ],
                         ),
                       ),
                     );
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 16),
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.05),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4))
-                        ]),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Text(name,
-                                  style: GoogleFonts.poppins(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16)),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                  color: profit >= 0
-                                      ? kIncomeColor.withValues(alpha: 0.1)
-                                      : kExpenseColor.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(8)),
-                              child: Text(
-                                  profit >= 0
-                                      ? "+ \$${profit.toStringAsFixed(0)}"
-                                      : "- \$${profit.abs().toStringAsFixed(0)}",
-                                  style: GoogleFonts.poppins(
-                                      color: profit >= 0
-                                          ? kIncomeColor
-                                          : kExpenseColor,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12)),
-                            ),
-                            const SizedBox(width: 8),
-                            const Icon(Icons.arrow_forward_ios,
-                                size: 12, color: Colors.grey)
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        // Barra visual
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: Row(
-                            children: [
-                              if (inc > 0)
-                                Expanded(
-                                    flex: inc.toInt(),
-                                    child: Container(
-                                        height: 6, color: kIncomeColor)),
-                              if (exp > 0)
-                                Expanded(
-                                    flex: exp.toInt(),
-                                    child: Container(
-                                        height: 6, color: kExpenseColor)),
-                              if (inc == 0 && exp == 0)
-                                Expanded(
-                                    child: Container(
-                                        height: 6, color: Colors.grey[200]))
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text("Ventas: \$${inc.toStringAsFixed(0)}",
-                                style: GoogleFonts.poppins(
-                                    fontSize: 11, color: Colors.grey[600])),
-                            Text("Costos: \$${exp.toStringAsFixed(0)}",
-                                style: GoogleFonts.poppins(
-                                    fontSize: 11, color: Colors.red[300])),
-                          ],
-                        )
-                      ],
-                    ),
-                  ),
-                );
-              },
-            );
-          },
-        );
-      },
-    );
-  }
+                  }, // itemBuilder
+                ); // ListView.builder
+              }, // reservasSnapshot builder
+            ); // StreamBuilder reservas
+          }, // expenseSnapshot builder
+        ); // StreamBuilder gastos
+      }, // destSnapshot builder
+    ); // StreamBuilder destinos
+  } // build
 }
 
 // -----------------------------------------------------------------------------
@@ -880,7 +903,7 @@ class _MetricsTabState extends State<_MetricsTab> {
                             description: "Visitas a la actividad",
                           ),
                           _AnalyticCard(
-                            title: "Ventas rotales",
+                            title: "Ventas totales",
                             value: totalSales.toString(),
                             icon: Icons.shopping_bag_outlined,
                             color: Colors.teal,
@@ -1139,7 +1162,7 @@ class _AddExpenseModalState extends State<_AddExpenseModal> {
       _descCtrl.text = e['descripcion'];
       _amountCtrl.text = e['monto'].toString();
       _category = e['categoria'];
-      _selectedDate = (e['fecha'] as Timestamp).toDate();
+      _selectedDate = _parseDate(e['fecha']);
       _selectedDestinationId = e['destinationId'];
     } else if (widget.preSelectedDestinationId != null) {
       // Si venimos de la pantalla de detalle, pre-cargamos el ID
@@ -1887,7 +1910,7 @@ class _ActivityExpensesView extends StatelessWidget {
                     final data = doc.data() as Map<String, dynamic>;
                     data['id'] = doc.id; // Importante para editar/borrar
 
-                    final DateTime date = (data['fecha'] as Timestamp).toDate();
+                    final DateTime date = _parseDate(data['fecha']);
 
                     return Card(
                       elevation: 0,
@@ -2076,7 +2099,7 @@ class _ActivityProfitabilityDetail extends StatelessWidget {
                 items.add({
                   'type': 'expense',
                   'amount': amount,
-                  'date': (data['fecha'] as Timestamp).toDate(),
+                  'date': _parseDate(data['fecha']),
                   'title': data['descripcion'] ?? 'Gasto',
                   'subtitle': data['categoria'] ?? 'Operativo',
                   'raw': data, // Pasamos la data completa con ID incluido
@@ -2095,7 +2118,7 @@ class _ActivityProfitabilityDetail extends StatelessWidget {
                   items.add({
                     'type': 'income',
                     'amount': paid,
-                    'date': (data['createdAt'] as Timestamp).toDate(),
+                    'date': _parseDate(data['createdAt']),
                     'title': data['name'] ?? 'Venta',
                     'subtitle':
                         status == 'verificado' ? 'Verificado' : 'Parcial',

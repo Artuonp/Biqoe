@@ -507,7 +507,7 @@ class _DestinationCardState extends State<DestinationCard> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
-                              '€${widget.price.toStringAsFixed(0)}',
+                              '\$${widget.price.toStringAsFixed(0)}',
                               style: const TextStyle(
                                 color: Color.fromRGBO(17, 48, 73, 1),
                                 fontSize: 14,

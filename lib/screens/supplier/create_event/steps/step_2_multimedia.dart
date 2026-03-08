@@ -369,7 +369,7 @@ class _Step2MultimediaState extends State<Step2Multimedia> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text("Siguiente Paso",
+                  Text("Siguiente paso",
                       style: GoogleFonts.poppins(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,

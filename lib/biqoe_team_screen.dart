@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
-import 'verify_screen.dart';
-import 'add_destination_screen.dart';
 import 'modify_destination_screen.dart';
 import 'delete_destination_screen.dart';
 import 'tasa_screen.dart';
 import 'highlited_order_screen.dart';
-import 'confirmation_biqoe_screen.dart';
 
 class BiqoeTeamScreen extends StatelessWidget {
   final String userId; // Agregamos el parámetro userId
@@ -29,11 +26,6 @@ class BiqoeTeamScreen extends StatelessWidget {
               ElevatedButton(
                 onPressed: () {
                   // Navegar a la pantalla "Verificar destinos"
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (context) => VerifyScreen(userId: userId)),
-                  );
                 },
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16.0),
@@ -62,10 +54,6 @@ class BiqoeTeamScreen extends StatelessWidget {
               ElevatedButton(
                 onPressed: () {
                   // Navegar a la pantalla "Agregar destinos"
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const AddScreen()),
-                  );
                 },
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16.0),
@@ -218,13 +206,7 @@ class BiqoeTeamScreen extends StatelessWidget {
               const SizedBox(height: 16),
 
               ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (context) => const ConfirmationBiqoeScreen()),
-                  );
-                },
+                onPressed: () {},
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16.0),
                   backgroundColor: Colors.white,

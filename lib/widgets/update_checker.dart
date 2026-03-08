@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart'; // IMPORTANTE: Reemplaza a dart:io
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
@@ -35,7 +35,7 @@ class _UpdateCheckerState extends State<UpdateChecker> {
       await remoteConfig.fetchAndActivate();
 
       final minRequiredVersion = remoteConfig.getInt('min_required_version');
-      const currentVersion = 38; // TU VERSIÓN ACTUAL FIJA
+      const currentVersion = 46; // TU VERSIÓN ACTUAL FIJA
 
       if (currentVersion < minRequiredVersion) {
         if (mounted) {
@@ -94,7 +94,8 @@ class _UpdateCheckerState extends State<UpdateChecker> {
                   backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
                 ),
                 onPressed: () async {
-                  final url = Platform.isAndroid
+                  // CAMBIO AQUÍ: Usamos defaultTargetPlatform en lugar de Platform.isAndroid
+                  final url = defaultTargetPlatform == TargetPlatform.android
                       ? 'https://play.google.com/store/apps/details?id=com.biqoe.app&pcampaignid=web_share'
                       : 'https://apps.apple.com/ve/app/biqoe/id6746291495';
                   await launchUrl(

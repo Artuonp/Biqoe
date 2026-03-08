@@ -22,6 +22,7 @@ class _Step1BasicInfoState extends State<Step1BasicInfo> {
 
   late TextEditingController _nameController;
   List<String> _selectedCategories = [];
+  bool _isPrivate = false;
 
   // DATOS FIJOS
   final List<String> _predefinedCategories = [
@@ -48,6 +49,7 @@ class _Step1BasicInfoState extends State<Step1BasicInfo> {
     if (widget.initialData['categorias'] != null) {
       _selectedCategories = List<String>.from(widget.initialData['categorias']);
     }
+    _isPrivate = widget.initialData['isPrivate'] ?? false;
   }
 
   @override
@@ -97,7 +99,7 @@ class _Step1BasicInfoState extends State<Step1BasicInfo> {
       widget.onNext({
         'nombre': _nameController.text.trim(),
         'categorias': _selectedCategories,
-        // Eliminadas descripciones e información de restaurante
+        'isPrivate': _isPrivate,
       });
     }
   }
@@ -183,6 +185,50 @@ class _Step1BasicInfoState extends State<Step1BasicInfo> {
             ),
 
             const SizedBox(height: 50),
+
+            // --- ¿ES PRIVADO? ---
+            Container(
+              decoration: BoxDecoration(
+                color: _isPrivate
+                    ? kPrimaryColor.withValues(alpha: 0.06)
+                    : Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: _isPrivate
+                      ? kPrimaryColor.withValues(alpha: 0.3)
+                      : Colors.grey.shade200,
+                ),
+              ),
+              child: SwitchListTile(
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                title: Text(
+                  '¿Es privado?',
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                    color: _isPrivate ? kPrimaryColor : Colors.black87,
+                  ),
+                ),
+                subtitle: Text(
+                  _isPrivate
+                      ? 'Solo visible para quienes tengan el enlace.'
+                      : 'Visible para todos los usuarios de Biqoe.',
+                  style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: _isPrivate ? kPrimaryColor : Colors.grey),
+                ),
+                secondary: Icon(
+                  _isPrivate ? Icons.lock_rounded : Icons.public_rounded,
+                  color: _isPrivate ? kPrimaryColor : Colors.grey,
+                ),
+                value: _isPrivate,
+                activeThumbColor: kPrimaryColor,
+                onChanged: (val) => setState(() => _isPrivate = val),
+              ),
+            ),
+
+            const SizedBox(height: 30),
 
             // --- BOTÓN SIGUIENTE ---
             SizedBox(

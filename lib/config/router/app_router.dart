@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart'; // IMPORTANTE AÑADIDO PARA kIsWeb
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,8 +11,6 @@ import '../../register_screen.dart';
 import '../../screens/supplier/destination_detail_screen.dart';
 import '../../screens/search_screen.dart';
 import '../../widgets/update_checker.dart';
-import '../../verify_screen.dart';
-import '../../supplier_verify_screen.dart';
 import '../../guest_screen.dart';
 import '../../password_reset_screen.dart';
 
@@ -45,6 +44,19 @@ import '../../screens/supplier/provider_profile_screen.dart';
 // WIDGET RESPONSIVO
 import '../../widgets/responsive_scaffold.dart';
 
+// =====================================================================
+// 🔥 EL BYPASS DEFINITIVO PARA SAFARI / APPLE 🔥
+// Firebase Auth colapsa en Safari al pedir el 'currentUser' si el
+// navegador bloquea las cookies. Esta función atrapa ese colapso letal.
+// =====================================================================
+User? get _safeCurrentUser {
+  try {
+    return FirebaseAuth.instance.currentUser;
+  } catch (e) {
+    return null; // Si Safari hace colapsar a Firebase, devolvemos null seguro
+  }
+}
+
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<NavigatorState> _shellNavigatorKey =
     GlobalKey<NavigatorState>();
@@ -52,20 +64,21 @@ final GlobalKey<NavigatorState> _shellNavigatorKey =
 final GoRouter appRouter = GoRouter(
   navigatorKey: rootNavigatorKey,
   initialLocation: '/',
-  refreshListenable:
-      GoRouterRefreshStream(FirebaseAuth.instance.authStateChanges()),
 
-  // --- LÓGICA DE REDIRECCIÓN CORREGIDA ---
+  // Apagamos este Stream en Web porque también detona colapsos asíncronos en Safari
+  refreshListenable: kIsWeb
+      ? null
+      : GoRouterRefreshStream(FirebaseAuth.instance.authStateChanges()),
+
   redirect: (context, state) {
-    final user = FirebaseAuth.instance.currentUser;
-
-    // Un usuario es "realmente logueado" si existe Y NO es anónimo
+    final user = _safeCurrentUser;
     final bool isLoggedIn = user != null;
     final bool isAnon = user?.isAnonymous ?? false;
-
     final path = state.matchedLocation;
 
+    // RUTAS PÚBLICAS ESTRICTAS
     final publicRoutes = [
+      '/',
       '/login',
       '/login-form',
       '/register',
@@ -73,41 +86,48 @@ final GoRouter appRouter = GoRouter(
       '/forgot-password'
     ];
 
-    // 1. Si no hay usuario (ni registrado ni anónimo)
     if (!isLoggedIn) {
-      // Rutas públicas permitidas
+      // Sin sesión: '/' redirige a '/login' para que LoginScreen se muestre
+      // fuera del StatefulShellRoute (sin bottom nav bar).
+      if (path == '/') return '/login';
+
       if (publicRoutes.contains(path)) return null;
 
-      // Permitir Slugs (Perfiles públicos)
-      if (path.length > 1 &&
-          !path.startsWith('/bookings') &&
-          !path.startsWith('/saved') &&
-          !path.startsWith('/settings') &&
-          !path.startsWith('/account') &&
-          !path.startsWith('/verify') &&
-          !path.startsWith('/supplier') &&
-          !path.startsWith('/chats') &&
-          !path.startsWith('/admin')) {
-        return null;
+      // 🔥 LÓGICA DE RUTAS MEJORADA Y BLINDADA 🔥
+      // Definimos claramente cuáles son las rutas que requieren sesión obligatoria.
+      final isProtectedRoute = path.startsWith('/bookings') ||
+          path.startsWith('/saved') ||
+          path.startsWith('/settings') ||
+          path.startsWith('/account') ||
+          path.startsWith('/verify') ||
+          path.startsWith('/supplier') ||
+          path.startsWith('/chats') ||
+          path.startsWith('/admin');
+
+      // Si es una ruta protegida y no hay sesión, mandarlo al login
+      if (isProtectedRoute) {
+        return '/login';
       }
 
-      // Si no, mandar a Login
-      return '/login';
+      // Si no es una ruta protegida (Por ejemplo: /mi-slug-de-proveedor),
+      // lo dejamos pasar sin restricciones para que no colapse en Safari.
+      return null;
     }
 
-    // 2. Si el usuario está logueado...
-    // AHORA: Solo bloqueamos el login si NO es anónimo.
-    if (isLoggedIn && !isAnon && publicRoutes.contains(path)) {
-      return '/'; // Usuario registrado intentando ver login -> Home
+    if (isLoggedIn && !isAnon) {
+      // Si está logueado e intenta volver al login, lo mandamos al home
+      if (path == '/login' ||
+          path == '/login-form' ||
+          path == '/register' ||
+          path == '/guest') {
+        return '/';
+      }
     }
 
-    return null; // Dejar pasar
+    return null;
   },
 
   routes: [
-    // =========================================================================
-    // STATEFUL SHELL ROUTE (Barra de Navegación Persistente - Home/Tabs)
-    // =========================================================================
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) {
         return ResponsiveScaffold(navigationShell: navigationShell);
@@ -120,11 +140,13 @@ final GoRouter appRouter = GoRouter(
               path: '/',
               name: 'home',
               pageBuilder: (context, state) {
-                final user = FirebaseAuth.instance.currentUser;
+                // El redirect garantiza que solo usuarios con sesión activa
+                // llegan aquí — sin sesión se redirige a '/login' (fuera del shell).
+                final String safeUid = _safeCurrentUser?.uid ?? 'guest';
                 return NoTransitionPage(
                   child: UpdateChecker(
-                    child: SearchScreen(
-                        userId: user?.uid ?? '', destinations: const []),
+                    child:
+                        SearchScreen(userId: safeUid, destinations: const []),
                   ),
                 );
               },
@@ -136,10 +158,12 @@ final GoRouter appRouter = GoRouter(
             GoRoute(
               path: '/bookings',
               name: 'bookings',
-              pageBuilder: (context, state) => NoTransitionPage(
-                child: BookingsScreen(
-                    userId: FirebaseAuth.instance.currentUser?.uid ?? ''),
-              ),
+              pageBuilder: (context, state) {
+                final uid = _safeCurrentUser?.uid ?? '';
+                return NoTransitionPage(
+                  child: BookingsScreen(userId: uid),
+                );
+              },
             ),
           ],
         ),
@@ -148,10 +172,12 @@ final GoRouter appRouter = GoRouter(
             GoRoute(
               path: '/saved',
               name: 'saved',
-              pageBuilder: (context, state) => NoTransitionPage(
-                child: SavedDestinationsScreen(
-                    userId: FirebaseAuth.instance.currentUser?.uid ?? ''),
-              ),
+              pageBuilder: (context, state) {
+                final uid = _safeCurrentUser?.uid ?? '';
+                return NoTransitionPage(
+                  child: SavedDestinationsScreen(userId: uid),
+                );
+              },
             ),
           ],
         ),
@@ -160,11 +186,13 @@ final GoRouter appRouter = GoRouter(
             GoRoute(
               path: '/settings',
               name: 'settings',
-              pageBuilder: (context, state) => NoTransitionPage(
-                child: SettingsScreen(
-                    userId: FirebaseAuth.instance.currentUser?.uid ?? '',
-                    savedDestinations: const []),
-              ),
+              pageBuilder: (context, state) {
+                final uid = _safeCurrentUser?.uid ?? '';
+                return NoTransitionPage(
+                  child:
+                      SettingsScreen(userId: uid, savedDestinations: const []),
+                );
+              },
             ),
           ],
         ),
@@ -172,8 +200,6 @@ final GoRouter appRouter = GoRouter(
     ),
 
     // --- RUTAS EXTERNAS ---
-
-    // Auth
     GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
     GoRoute(
         path: '/login-form',
@@ -188,14 +214,11 @@ final GoRouter appRouter = GoRouter(
         return PasswordResetScreen(email: email ?? '');
       },
     ),
-
-    // Sub-pantallas del Home
     GoRoute(
       path: '/search-results',
-      builder: (context, state) => SearchResultsScreen(
-          userId: FirebaseAuth.instance.currentUser?.uid ?? ''),
+      builder: (context, state) =>
+          SearchResultsScreen(userId: _safeCurrentUser?.uid ?? ''),
     ),
-
     GoRoute(
       path: '/filter',
       builder: (context, state) {
@@ -210,13 +233,11 @@ final GoRouter appRouter = GoRouter(
         );
       },
     ),
-
     GoRoute(
       path: '/restaurants',
-      builder: (context, state) => RestaurantsScreen(
-          userId: FirebaseAuth.instance.currentUser?.uid ?? ''),
+      builder: (context, state) =>
+          RestaurantsScreen(userId: _safeCurrentUser?.uid ?? ''),
     ),
-
     GoRoute(
       path: '/destinations-list',
       builder: (context, state) {
@@ -231,46 +252,30 @@ final GoRouter appRouter = GoRouter(
         );
       },
     ),
-
     GoRoute(
       path: '/d/:id',
       name: 'destination_detail',
       builder: (context, state) {
-        final Map<String, dynamic>? destinoObject =
-            state.extra as Map<String, dynamic>?;
-        final user = FirebaseAuth.instance.currentUser;
-        if (user != null) {
-          return DestinationDetailScreen(
-              destino: destinoObject ?? {}, userId: user.uid);
-        } else {
-          return const LoginScreen();
-        }
+        final String? id = state.pathParameters['id'];
+        final user = _safeCurrentUser;
+        final String userId = user?.uid ?? 'guest';
+        return DestinationDetailScreen(
+          destinationId: id ?? '',
+          userId: userId,
+        );
       },
     ),
-
-    // --- NUEVA RUTA PARA LISTA DE CHATS (Para Notificaciones) ---
     GoRoute(
       path: '/chats',
       builder: (context, state) => ChatListScreen(
-        currentUserId: FirebaseAuth.instance.currentUser?.uid ?? '',
-        // Asumimos false, si es supplier el dashboard lo maneja
+        currentUserId: _safeCurrentUser?.uid ?? '',
         isSupplier: false,
       ),
     ),
-
-    // Gestión y Configuración
-    GoRoute(
-        path: '/verify',
-        builder: (context, state) =>
-            VerifyScreen(userId: FirebaseAuth.instance.currentUser?.uid ?? '')),
-    GoRoute(
-        path: '/supplier/verify',
-        builder: (context, state) => SupplierVerifyScreen(
-            userId: FirebaseAuth.instance.currentUser?.uid ?? '')),
     GoRoute(
         path: '/account',
-        builder: (context, state) => AccountScreen(
-            userId: FirebaseAuth.instance.currentUser?.uid ?? '')),
+        builder: (context, state) =>
+            AccountScreen(userId: _safeCurrentUser?.uid ?? '')),
     GoRoute(
         path: '/terms',
         builder: (context, state) => const TermsConditionsScreen()),
@@ -278,21 +283,18 @@ final GoRouter appRouter = GoRouter(
         path: '/support', builder: (context, state) => const SupportScreen()),
     GoRoute(
         path: '/admin/team',
-        builder: (context, state) => BiqoeTeamScreen(
-            userId: FirebaseAuth.instance.currentUser?.uid ?? '')),
-
-    // Dashboard de Proveedor
+        builder: (context, state) =>
+            BiqoeTeamScreen(userId: _safeCurrentUser?.uid ?? '')),
     GoRoute(
       path: '/supplier/dashboard',
-      builder: (context, state) => SupplierDashboardLayout(
-          userId: FirebaseAuth.instance.currentUser?.uid ?? ''),
+      builder: (context, state) =>
+          SupplierDashboardLayout(userId: _safeCurrentUser?.uid ?? ''),
     ),
     GoRoute(
       path: '/supplier/manifest',
       builder: (context, state) {
         final args = state.extra as Map<String, dynamic>;
-        final String currentUserId =
-            FirebaseAuth.instance.currentUser?.uid ?? '';
+        final String currentUserId = _safeCurrentUser?.uid ?? '';
         return ManifestScreen(
           supplierId: currentUserId,
           date: args['date'] as DateTime,
@@ -301,22 +303,15 @@ final GoRouter appRouter = GoRouter(
         );
       },
     ),
-
-    // --- AQUÍ ESTÁ EL ARREGLO ---
     GoRoute(
       path: '/supplier/manual-booking',
       builder: (context, state) {
-        // Intentamos obtener el ID del extra (si viene del dashboard)
         final supplierIdFromExtra = state.extra as String?;
-        // Si no, usamos el ID del usuario actual (fallback para evitar errores)
-        final currentId = FirebaseAuth.instance.currentUser?.uid ?? '';
-
+        final currentId = _safeCurrentUser?.uid ?? '';
         return ManualBookingScreen(
             supplierId: supplierIdFromExtra ?? currentId);
       },
     ),
-    // ----------------------------
-
     GoRoute(
       path: '/supplier/customer/detail',
       builder: (context, state) {
@@ -324,13 +319,16 @@ final GoRouter appRouter = GoRouter(
         return CustomerDetailScreen(clientData: clientData);
       },
     ),
-
-    // Ruta dinámica (Slug) - Al final
+    // ==================================================
+    // 🔥 RUTA DEL PERFIL DEL PROVEEDOR BLINDADA 🔥
+    // ==================================================
     GoRoute(
       path: '/:slug',
       builder: (context, state) {
         final slug = state.pathParameters['slug'];
-        final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+
+        // Garantizamos que SIEMPRE haya un ID, para no romper Hive en la otra pantalla
+        final currentUserId = _safeCurrentUser?.uid ?? 'guest';
 
         if (slug == null || slug.isEmpty) {
           return const LoginScreen();

@@ -233,115 +233,176 @@ class RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> signInWithGoogle() async {
+    debugPrint('[Auth][Register] signInWithGoogle iniciado. kIsWeb=$kIsWeb');
     bool notificationsAllowed = await requestNotificationPermissions();
-    // CORRECCIÓN WEB: Chequear plataforma de forma segura
     bool isNativeIOS = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
-
     if (!notificationsAllowed && !isNativeIOS) return;
 
     try {
-      await GoogleSignIn().signOut();
+      UserCredential userCredential;
+      String email;
 
-      final googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) {
-        _showErrorMessage('Registro con Google cancelado.');
-        return;
+      if (kIsWeb) {
+        // NO llamar setPersistence antes del popup — interfiere con OAuth
+        debugPrint('[Auth][Register] Web: signInWithPopup Google');
+        final provider = GoogleAuthProvider();
+        provider.addScope('email');
+        userCredential = await FirebaseAuth.instance.signInWithPopup(provider);
+        email = userCredential.user?.email ?? '';
+        debugPrint('[Auth][Register] Google popup OK email=$email');
+      } else {
+        debugPrint('[Auth][Register] Móvil: GoogleSignIn nativo');
+        await GoogleSignIn().signOut();
+        final googleUser = await GoogleSignIn().signIn();
+        if (googleUser == null) {
+          _showErrorMessage('Registro con Google cancelado.');
+          return;
+        }
+        email = googleUser.email;
+        if (await emailYaRegistrado(email)) {
+          _showErrorMessage('Esta cuenta de Google ya está siendo utilizada');
+          return;
+        }
+        final googleAuth = await googleUser.authentication;
+        final credential = GoogleAuthProvider.credential(
+          accessToken: googleAuth.accessToken,
+          idToken: googleAuth.idToken,
+        );
+        userCredential =
+            await FirebaseAuth.instance.signInWithCredential(credential);
+        debugPrint(
+            '[Auth][Register] Google nativo OK uid=${userCredential.user?.uid}');
       }
-
-      final email = googleUser.email;
-
-      if (await emailYaRegistrado(email)) {
-        _showErrorMessage('Esta cuenta de Google ya está siendo utilizada');
-        return;
-      }
-
-      final googleAuth = await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-      final userCredential =
-          await FirebaseAuth.instance.signInWithCredential(credential);
-
-      String uid = userCredential.user!.uid;
-      String? deviceToken = await FirebaseMessaging.instance.getToken();
-
-      await FirebaseFirestore.instance.collection('usuarios').doc(uid).set({
-        'name': googleUser.displayName,
-        'isAdmin': false,
-        'isSupplier': false,
-        'email': email,
-        'verified': true,
-        'celular': '',
-        'deviceToken': deviceToken,
-      });
 
       if (!mounted) return;
-      context.go('/');
+
+      String uid = userCredential.user!.uid;
+      String? deviceToken =
+          kIsWeb ? null : await FirebaseMessaging.instance.getToken();
+
+      final existing = await FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(uid)
+          .get();
+      if (!existing.exists) {
+        debugPrint('[Auth][Register] Creando doc Firestore uid=$uid');
+        await FirebaseFirestore.instance.collection('usuarios').doc(uid).set({
+          'name': userCredential.user?.displayName ?? '',
+          'isAdmin': false,
+          'isSupplier': false,
+          'email': email,
+          'verified': true,
+          'celular': '',
+          'deviceToken': deviceToken ?? '',
+        });
+      } else {
+        debugPrint('[Auth][Register] Doc ya existe uid=$uid');
+      }
+
+      if (!mounted) return;
+      final bool isSupplier = existing.data()?['isSupplier'] == true;
+      debugPrint('[Auth][Register] isSupplier=$isSupplier → navegando');
+      context.go(isSupplier ? '/supplier/dashboard' : '/');
       _showSuccessMessage('Registro exitoso con Google.');
-    } catch (e) {
+    } on FirebaseAuthException catch (e) {
+      debugPrint(
+          '[Auth][Register] FirebaseAuthException Google: code=${e.code} msg=${e.message}');
       _showErrorMessage(
-          'Ocurrió un error al iniciar sesión con Google. Intenta más tarde');
+          'Error Google [${e.code}]: ${e.message ?? "Intenta de nuevo."}');
+    } catch (e, stack) {
+      debugPrint('[Auth][Register] Error signInWithGoogle: $e\n$stack');
+      _showErrorMessage(
+          'Ocurrió un error al iniciar sesión con Google. Intenta más tarde.');
     }
   }
 
   Future<void> signInWithApple() async {
+    debugPrint('[Auth][Register] signInWithApple iniciado. kIsWeb=$kIsWeb');
     bool notificationsAllowed = await requestNotificationPermissions();
-    if (!notificationsAllowed) return;
+    if (!kIsWeb && !notificationsAllowed) return;
 
     try {
-      final appleCredential = await SignInWithApple.getAppleIDCredential(
-        scopes: [
-          AppleIDAuthorizationScopes.email,
-          AppleIDAuthorizationScopes.fullName,
-        ],
-        webAuthenticationOptions: WebAuthenticationOptions(
-          clientId: 'com.biqoe.app.SiwA',
-          redirectUri: Uri.parse(
-            'https://biqoe-app.firebaseapp.com/__/auth/handler',
+      UserCredential userCredential;
+
+      if (kIsWeb) {
+        // NO llamar setPersistence antes del popup — interfiere con OAuth
+        debugPrint('[Auth][Register] Web: signInWithPopup Apple');
+        final provider = OAuthProvider('apple.com');
+        provider.addScope('email');
+        provider.addScope('name');
+        userCredential = await FirebaseAuth.instance.signInWithPopup(provider);
+        debugPrint(
+            '[Auth][Register] Apple popup OK email=${userCredential.user?.email}');
+      } else {
+        debugPrint('[Auth][Register] Móvil: SignInWithApple nativo');
+        final appleCredential = await SignInWithApple.getAppleIDCredential(
+          scopes: [
+            AppleIDAuthorizationScopes.email,
+            AppleIDAuthorizationScopes.fullName,
+          ],
+          webAuthenticationOptions: WebAuthenticationOptions(
+            clientId: 'com.biqoe.app.SiwA',
+            redirectUri: Uri.parse(
+              'https://biqoe-app.firebaseapp.com/__/auth/handler',
+            ),
           ),
-        ),
-      );
-
-      final oAuthProvider = OAuthProvider("apple.com");
-      final credential = oAuthProvider.credential(
-        idToken: appleCredential.identityToken,
-        accessToken: appleCredential.authorizationCode,
-      );
-
-      final userCredential =
-          await FirebaseAuth.instance.signInWithCredential(credential);
-
-      final email = userCredential.user?.email ?? appleCredential.email;
-      if (email == null) {
-        _showErrorMessage('No se pudo obtener el correo de Apple ID.');
-        return;
+        );
+        final oAuthProvider = OAuthProvider('apple.com');
+        final credential = oAuthProvider.credential(
+          idToken: appleCredential.identityToken,
+          accessToken: appleCredential.authorizationCode,
+        );
+        userCredential =
+            await FirebaseAuth.instance.signInWithCredential(credential);
+        debugPrint(
+            '[Auth][Register] Apple nativo OK uid=${userCredential.user?.uid}');
       }
-      if (await emailYaRegistrado(email)) {
-        _showErrorMessage('Esta cuenta de Apple ya está siendo utilizada');
+
+      if (!mounted) return;
+
+      final email = userCredential.user?.email ?? '';
+      if (email.isEmpty) {
+        _showErrorMessage('No se pudo obtener el correo de Apple ID.');
         return;
       }
 
       String uid = userCredential.user!.uid;
-      String? deviceToken = await FirebaseMessaging.instance.getToken();
-      await FirebaseFirestore.instance.collection('usuarios').doc(uid).set({
-        'name':
-            appleCredential.givenName ?? userCredential.user?.displayName ?? '',
-        'isAdmin': false,
-        'isSupplier': false,
-        'email': email,
-        'verified': true,
-        'celular': '',
-        'deviceToken': deviceToken,
-      });
+      String? deviceToken =
+          kIsWeb ? null : await FirebaseMessaging.instance.getToken();
+
+      final existing = await FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(uid)
+          .get();
+      if (!existing.exists) {
+        debugPrint('[Auth][Register] Creando doc Apple uid=$uid');
+        await FirebaseFirestore.instance.collection('usuarios').doc(uid).set({
+          'name': userCredential.user?.displayName ?? '',
+          'isAdmin': false,
+          'isSupplier': false,
+          'email': email,
+          'verified': true,
+          'celular': '',
+          'deviceToken': deviceToken ?? '',
+        });
+      } else {
+        debugPrint('[Auth][Register] Doc Apple ya existe uid=$uid');
+      }
 
       if (!mounted) return;
-      context.go('/');
-
+      final bool isSupplier = existing.data()?['isSupplier'] == true;
+      debugPrint('[Auth][Register] Apple isSupplier=$isSupplier → navegando');
+      context.go(isSupplier ? '/supplier/dashboard' : '/');
       _showSuccessMessage('Registro exitoso con Apple.');
-    } catch (e) {
+    } on FirebaseAuthException catch (e) {
+      debugPrint(
+          '[Auth][Register] FirebaseAuthException Apple: code=${e.code} msg=${e.message}');
       _showErrorMessage(
-          'Ocurrió un error al iniciar sesión con Apple. Intenta más tarde');
+          'Error Apple [${e.code}]: ${e.message ?? "Intenta de nuevo."}');
+    } catch (e, stack) {
+      debugPrint('[Auth][Register] Error signInWithApple: $e\n$stack');
+      _showErrorMessage(
+          'Ocurrió un error al iniciar sesión con Apple. Intenta más tarde.');
     }
   }
 

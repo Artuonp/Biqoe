@@ -350,8 +350,14 @@ class FilterScreenState extends State<FilterScreen> {
                             fontFamily: 'Poppins',
                             color: Color.fromRGBO(17, 48, 73, 1)))),
                 DropdownMenuItem(
-                    value: 'Caracas',
-                    child: Text('Caracas',
+                    value: 'Distrito Capital',
+                    child: Text('Distrito Capital',
+                        style: TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Color.fromRGBO(17, 48, 73, 1)))),
+                DropdownMenuItem(
+                    value: 'Dependencias Federales',
+                    child: Text('Dependencias Federales',
                         style: TextStyle(
                             fontFamily: 'Poppins',
                             color: Color.fromRGBO(17, 48, 73, 1)))),

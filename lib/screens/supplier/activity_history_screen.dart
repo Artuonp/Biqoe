@@ -9,6 +9,20 @@ import 'package:hugeicons/hugeicons.dart';
 import '../chat_detail_screen.dart'; // Ajusta la ruta a tu chat
 import 'dashboard_home_screen.dart'; // Para reutilizar BookingDetailDialog
 
+// Helper: convierte Timestamp, String ISO o DateTime a DateTime de forma segura.
+// Necesario porque reservas creadas vía REST (Safari web) guardan fechas como String ISO.
+DateTime _parseDate(dynamic value, {DateTime? fallback}) {
+  if (value == null) return fallback ?? DateTime(2000);
+  if (value is DateTime) return value;
+  if (value is Timestamp) return value.toDate();
+  if (value is String && value.isNotEmpty) {
+    try {
+      return DateTime.parse(value);
+    } catch (_) {}
+  }
+  return fallback ?? DateTime(2000);
+}
+
 const Color kPrimaryColor = Color.fromRGBO(17, 48, 73, 1);
 const Color kBackgroundColor = Color(0xFFF8F9FD);
 
@@ -80,8 +94,8 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
                   'type': 'booking',
                   'id': "${doc.id}_booking",
                   'docId': doc.id,
-                  'date': (data['createdAt'] as Timestamp?)?.toDate() ??
-                      DateTime(2000),
+                  'date':
+                      _parseDate(data['createdAt'], fallback: DateTime(2000)),
                   'data': data,
                 });
 
@@ -98,8 +112,7 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
                         'type': 'payment_event',
                         'id': "${doc.id}_pay_$i",
                         'docId': doc.id,
-                        'date': (p['date'] as Timestamp?)?.toDate() ??
-                            DateTime.now(),
+                        'date': _parseDate(p['date'], fallback: DateTime.now()),
                         'data': {
                           ...data,
                           'specificAmount': p['amount'],
@@ -120,8 +133,8 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
                   'type': 'message',
                   'id': doc.id,
                   'docId': doc.id,
-                  'date': (data['lastMessageTime'] as Timestamp?)?.toDate() ??
-                      DateTime(2000),
+                  'date': _parseDate(data['lastMessageTime'],
+                      fallback: DateTime(2000)),
                   'data': data,
                 });
               }
@@ -186,15 +199,14 @@ class _HistoryItemLocal extends StatelessWidget {
       status = "Mensaje: ${data['lastMessage'] ?? ''}";
       icon = HugeIcons.strokeRoundedMessage01;
       color = Colors.blue;
-      date =
-          (data['lastMessageTime'] as Timestamp?)?.toDate() ?? DateTime.now();
+      date = _parseDate(data['lastMessageTime'], fallback: DateTime.now());
     }
     // 2. Pago
     else if (itemType == 'payment_event') {
       if (data['displayDate'] != null && data['displayDate'] is Timestamp) {
-        date = (data['displayDate'] as Timestamp).toDate();
+        date = _parseDate(data['displayDate']);
       } else {
-        date = (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+        date = _parseDate(data['createdAt'], fallback: DateTime.now());
       }
 
       String type = data['paymentType'] ?? 'installment';
@@ -224,7 +236,7 @@ class _HistoryItemLocal extends StatelessWidget {
         icon = HugeIcons.strokeRoundedCheckmarkCircle02;
         color = Colors.green;
       }
-      date = (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+      date = _parseDate(data['createdAt'], fallback: DateTime.now());
     }
 
     final dateStr = DateFormat('dd/MM/yyyy hh:mm a', 'es').format(date);

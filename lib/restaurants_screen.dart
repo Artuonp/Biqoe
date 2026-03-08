@@ -5,7 +5,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hugeicons/hugeicons.dart';
 
-import 'screens/supplier/destination_detail_screen.dart';
 import 'screens/search_screen.dart';
 import 'bookings_screen.dart';
 import 'saved_destinations_screen.dart';
@@ -517,7 +516,8 @@ class _RestaurantsScreenState extends State<RestaurantsScreen> {
   Future<void> _showUbicacionDialog() async {
     final List<String> ubicaciones = [
       'Todas',
-      'Caracas',
+      'Distrito Capital',
+      'Dependencias Federales',
       'Miranda',
       'Zulia', // Nueva opción que quita el filtro
       'Amazonas',
@@ -1085,15 +1085,15 @@ class _DestinationCardState extends State<DestinationCard> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: () => Navigator.push(
+          /*onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => DestinationDetailScreen(
-                destino: widget.data,
+                destinationId: widget.data['id'] ?? '',
                 userId: widget.userId,
               ),
             ),
-          ),
+          ),*/
           child: Card(
             clipBehavior: Clip.antiAlias,
             shape: RoundedRectangleBorder(
@@ -1226,7 +1226,7 @@ class _DestinationCardState extends State<DestinationCard> {
                               ],
                             ),
                             Text(
-                              '€${price.toStringAsFixed(2)}',
+                              '\$${price.toStringAsFixed(2)}',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: screenWidth * 0.03,

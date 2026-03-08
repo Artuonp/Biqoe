@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 const Color kPrimaryColor = Color.fromRGBO(17, 48, 73, 1);
 
@@ -24,13 +25,13 @@ class _Step5PoliciesState extends State<Step5Policies> {
   // --- ESTADO DE PAGOS ---
   List<Map<String, dynamic>> _selectedPaymentMethods = [];
 
-  // Lista vacía. En una app real, aquí cargarías de Firestore los métodos del usuario.
-  final List<Map<String, dynamic>> _savedProfileMethods = [];
+  // Métodos guardados persistidos con Hive
+  List<Map<String, dynamic>> _savedProfileMethods = [];
+  Box? _savedMethodsBox;
 
   @override
   void initState() {
     super.initState();
-    // Cargar datos previos si se regresa
     if (widget.initialData['preguntas'] != null) {
       _customQuestions =
           List<Map<String, dynamic>>.from(widget.initialData['preguntas']);
@@ -38,6 +39,50 @@ class _Step5PoliciesState extends State<Step5Policies> {
     if (widget.initialData['metodosPago'] != null) {
       _selectedPaymentMethods =
           List<Map<String, dynamic>>.from(widget.initialData['metodosPago']);
+    }
+    _loadSavedMethods();
+  }
+
+  Future<void> _loadSavedMethods() async {
+    try {
+      final box = await Hive.openBox('saved_payment_methods');
+      _savedMethodsBox = box;
+      final loaded =
+          box.values.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      if (mounted) setState(() => _savedProfileMethods = loaded);
+    } catch (e) {
+      debugPrint('[Pagos] Error cargando métodos guardados: $e');
+    }
+  }
+
+  Future<void> _persistMethod(Map<String, dynamic> method) async {
+    try {
+      final box =
+          _savedMethodsBox ?? await Hive.openBox('saved_payment_methods');
+      // Usamos la combinación método+correo/teléfono como clave única para evitar duplicados
+      final key =
+          '${method['metodo']}_${method['correo'] ?? method['telefono'] ?? 'cash'}';
+      await box.put(key, method);
+      final loaded =
+          box.values.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      if (mounted) setState(() => _savedProfileMethods = loaded);
+    } catch (e) {
+      debugPrint('[Pagos] Error guardando método: $e');
+    }
+  }
+
+  Future<void> _deletePersistedMethod(Map<String, dynamic> method) async {
+    try {
+      final box =
+          _savedMethodsBox ?? await Hive.openBox('saved_payment_methods');
+      final key =
+          '${method['metodo']}_${method['correo'] ?? method['telefono'] ?? 'cash'}';
+      await box.delete(key);
+      final loaded =
+          box.values.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      if (mounted) setState(() => _savedProfileMethods = loaded);
+    } catch (e) {
+      debugPrint('[Pagos] Error eliminando método guardado: $e');
     }
   }
 
@@ -66,18 +111,13 @@ class _Step5PoliciesState extends State<Step5Policies> {
       ),
       builder: (context) => _PaymentForm(
         savedMethods: _savedProfileMethods,
+        onDeleteSaved: _deletePersistedMethod,
         onAdd: (paymentData, saveToProfile) {
           setState(() {
             _selectedPaymentMethods.add(paymentData);
           });
-
           if (saveToProfile) {
-            // Lógica futura para guardar en perfil
-            // _savedProfileMethods.add(paymentData);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                  content: Text("Método guardado localmente para esta sesión")),
-            );
+            _persistMethod(paymentData);
           }
         },
       ),
@@ -414,9 +454,14 @@ class _AddQuestionDialogState extends State<_AddQuestionDialog> {
 // =============================================================================
 class _PaymentForm extends StatefulWidget {
   final Function(Map<String, dynamic>, bool) onAdd;
+  final Function(Map<String, dynamic>) onDeleteSaved;
   final List<Map<String, dynamic>> savedMethods;
 
-  const _PaymentForm({required this.onAdd, required this.savedMethods});
+  const _PaymentForm({
+    required this.onAdd,
+    required this.onDeleteSaved,
+    required this.savedMethods,
+  });
 
   @override
   State<_PaymentForm> createState() => _PaymentFormState();
@@ -632,7 +677,7 @@ class _PaymentFormState extends State<_PaymentForm>
                     ),
                   ),
 
-                  // --- TAB 2: GUARDADAS (VACÍA INICIALMENTE) ---
+                  // --- TAB 2: GUARDADAS ---
                   widget.savedMethods.isEmpty
                       ? Center(
                           child: Column(
@@ -643,6 +688,13 @@ class _PaymentFormState extends State<_PaymentForm>
                             const SizedBox(height: 10),
                             Text("No tienes cuentas guardadas",
                                 style: GoogleFonts.poppins(color: Colors.grey)),
+                            const SizedBox(height: 6),
+                            Text(
+                              "Marca \"Guardar en mi perfil\" al agregar\nuna cuenta nueva.",
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.poppins(
+                                  fontSize: 11, color: Colors.grey[400]),
+                            ),
                           ],
                         ))
                       : ListView.builder(
@@ -650,6 +702,9 @@ class _PaymentFormState extends State<_PaymentForm>
                           itemCount: widget.savedMethods.length,
                           itemBuilder: (context, index) {
                             final saved = widget.savedMethods[index];
+                            final subtitle = saved['metodo'] == 'Pago móvil'
+                                ? '${saved['banco']} · ${saved['telefono']}'
+                                : saved['correo'] ?? '';
                             return Card(
                               elevation: 0,
                               color: Colors.white,
@@ -662,21 +717,41 @@ class _PaymentFormState extends State<_PaymentForm>
                                 leading:
                                     Icon(Icons.bookmark, color: kPrimaryColor),
                                 title: Text(saved['metodo'],
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold)),
-                                subtitle: Text(saved['metodo'] == 'Pago móvil'
-                                    ? saved['telefono']
-                                    : saved['correo'] ?? ''),
-                                trailing: ElevatedButton(
-                                  style: ElevatedButton.styleFrom(
-                                      backgroundColor: kPrimaryColor,
-                                      shape: const StadiumBorder()),
-                                  onPressed: () {
-                                    widget.onAdd(saved, false);
-                                    Navigator.pop(context);
-                                  },
-                                  child: const Text("Usar",
-                                      style: TextStyle(color: Colors.white)),
+                                    style: GoogleFonts.poppins(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14)),
+                                subtitle: Text(subtitle,
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 12, color: Colors.grey[600])),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    // Botón "Usar"
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                          backgroundColor: kPrimaryColor,
+                                          shape: const StadiumBorder(),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 12, vertical: 6)),
+                                      onPressed: () {
+                                        widget.onAdd(saved, false);
+                                        Navigator.pop(context);
+                                      },
+                                      child: const Text("Usar",
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 12)),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    // Botón eliminar
+                                    IconButton(
+                                      icon: const Icon(Icons.close,
+                                          color: Colors.red, size: 18),
+                                      tooltip: 'Eliminar guardado',
+                                      onPressed: () =>
+                                          widget.onDeleteSaved(saved),
+                                    ),
+                                  ],
                                 ),
                               ),
                             );

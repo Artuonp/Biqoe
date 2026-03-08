@@ -251,7 +251,7 @@ class ChatListScreen extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              "Contacta con un proveedor para reservar tu próximo plan",
+              "Comienza una nueva conversación",
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(
                   color: Colors.grey[500], fontSize: 14, height: 1.5),

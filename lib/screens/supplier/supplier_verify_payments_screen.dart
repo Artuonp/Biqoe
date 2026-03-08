@@ -12,6 +12,20 @@ import 'package:googleapis_auth/auth_io.dart'; // Para Auth de Firebase FCM
 import '../../booking_provider.dart';
 import 'dashboard_home_screen.dart';
 
+// Helper: convierte Timestamp, String ISO o DateTime a DateTime de forma segura.
+// Necesario porque reservas creadas vía REST (Safari web) guardan fechas como String ISO.
+DateTime _parseDate(dynamic value, {DateTime? fallback}) {
+  if (value == null) return fallback ?? DateTime(2000);
+  if (value is DateTime) return value;
+  if (value is Timestamp) return value.toDate();
+  if (value is String && value.isNotEmpty) {
+    try {
+      return DateTime.parse(value);
+    } catch (_) {}
+  }
+  return fallback ?? DateTime(2000);
+}
+
 const Color kPrimaryColor = Color.fromRGBO(17, 48, 73, 1);
 const Color kBackgroundColor = Color(0xFFF8F9FD);
 
@@ -650,7 +664,7 @@ class _DetailedPaymentCard extends StatelessWidget {
     String dateStr = '';
     if (payment['date'] != null && payment['date'] is Timestamp) {
       dateStr = DateFormat('dd MMM yyyy, hh:mm a')
-          .format((payment['date'] as Timestamp).toDate());
+          .format(_parseDate(payment['date']));
     }
 
     bool showVerifyBtn = (computedStatus == 'pending');

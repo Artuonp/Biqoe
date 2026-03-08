@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'screens/supplier/destination_detail_screen.dart';
+import 'package:go_router/go_router.dart';
 
 class SearchResultsScreen extends StatefulWidget {
   final String userId;
@@ -122,6 +122,9 @@ class SearchResultsScreenState extends State<SearchResultsScreen> {
                     final data = doc.data() as Map<String, dynamic>;
                     final name = data['nombre'] ?? '';
 
+                    // Excluir destinos privados
+                    if (data['isPrivate'] == true) return false;
+
                     return _searchText.isEmpty ||
                         name.toLowerCase().contains(_searchText.toLowerCase());
                   }).toList();
@@ -148,15 +151,10 @@ class SearchResultsScreenState extends State<SearchResultsScreen> {
                                 fontFamily: 'Poppins',
                                 color: Color.fromRGBO(17, 48, 73, 1))),
                         onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => DestinationDetailScreen(
-                                destino: data,
-                                userId: widget.userId,
-                              ),
-                            ),
-                          );
+                          // Mismo patrón que destinations_screen:
+                          // inyectar el id en data y navegar por GoRouter
+                          data['id'] = destination.id;
+                          context.push('/d/${destination.id}', extra: data);
                         },
                       );
                     },

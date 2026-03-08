@@ -41,8 +41,12 @@ class SearchScreenState extends State<SearchScreen> {
   Set<String> savedDestinationIds = {};
   late final ScrollController _highlightedScrollController;
 
-  // SOLUCIÓN AL PARPADEO: Definimos el Stream aquí para que no se recargue con setState
-  late final Stream<QuerySnapshot> _highlightsStream;
+// 🔥 SOLUCIÓN SAFARI: Lo hacemos opcional (?) para evitar crash al declararlo
+  Stream<QuerySnapshot>? _highlightsStream;
+
+  // SOLUCIÓN SAFARI: Banderas para saber qué bloqueó Safari
+  bool _hiveError = false;
+  bool _firestoreError = false;
 
   @override
   void initState() {
@@ -57,12 +61,17 @@ class SearchScreenState extends State<SearchScreen> {
       }
     });
 
-    // Inicializamos el Stream UNA SOLA VEZ aquí
-    _highlightsStream = FirebaseFirestore.instance
-        .collection('destinos')
-        .where('IsHighlighted', isEqualTo: true)
-        .orderBy('highlightOrder')
-        .snapshots();
+// Inicializamos el Stream UNA SOLA VEZ aquí
+    try {
+      _highlightsStream = FirebaseFirestore.instance
+          .collection('destinos')
+          .where('IsHighlighted', isEqualTo: true)
+          .orderBy('highlightOrder')
+          .snapshots();
+    } catch (e) {
+      debugPrint("Safari bloqueó Firestore: $e");
+      _firestoreError = true;
+    }
 
     // Iniciamos datos sin bloquear el hilo principal
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -112,7 +121,12 @@ class SearchScreenState extends State<SearchScreen> {
         });
       }
     } catch (e) {
-      debugPrint("Error abriendo Hive: $e");
+      debugPrint("Error abriendo Hive (Modo incógnito Safari): $e");
+      if (mounted) {
+        setState(() {
+          _hiveError = true; // Activamos el modo seguro sin Hive
+        });
+      }
     }
   }
 
@@ -215,9 +229,10 @@ class SearchScreenState extends State<SearchScreen> {
   }
 
   void fetchUserName() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null || user.isAnonymous) return;
     try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null || user.isAnonymous) return;
+
       final userDoc = await FirebaseFirestore.instance
           .collection('usuarios')
           .doc(user.uid)
@@ -229,7 +244,7 @@ class SearchScreenState extends State<SearchScreen> {
         });
       }
     } catch (e) {
-      debugPrint("Error obteniendo nombre: $e");
+      debugPrint("Error obteniendo nombre (Seguro en Safari): $e");
     }
   }
 
@@ -878,10 +893,20 @@ class SearchScreenState extends State<SearchScreen> {
 
   // --- STREAM DESTACADOS (Con Scroll Persistente) ---
   Widget _buildHighlightsStream() {
+    // Si Safari bloqueó Firestore, mostramos un mensaje vacío en lugar de explotar
+    if (_firestoreError || _highlightsStream == null) {
+      return SizedBox(
+        height: 280,
+        child: Center(
+            child: Text('Inicia sesión para ver recomendaciones',
+                style: GoogleFonts.poppins(color: Colors.grey))),
+      );
+    }
+
     return SizedBox(
       height: 280,
       child: StreamBuilder<QuerySnapshot>(
-        stream: _highlightsStream,
+        stream: _highlightsStream!, // Ya estamos seguros de que no es nulo
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center();
@@ -894,81 +919,91 @@ class SearchScreenState extends State<SearchScreen> {
 
           final destinations = snapshot.data!.docs;
 
-          // CAMBIO 2: Si Hive no ha cargado, mostramos cargando pero manteniendo la altura
-          // Esto evita el error rojo y el parpadeo de altura.
-          if (savedDestinationsBox == null) {
+          // CAMBIO: Si Hive no ha cargado y NO hay error, esperamos.
+          // Si hay error (_hiveError = true), pasamos de largo y mostramos las tarjetas.
+          if (savedDestinationsBox == null && !_hiveError) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // Escuchamos cambios en Hive en tiempo real
-          return ValueListenableBuilder(
-            valueListenable:
-                savedDestinationsBox!.listenable(), // Usamos ! aquí
-            builder: (context, Box<Map> box, _) {
-              return ListView.builder(
-                key: const PageStorageKey('highlights_scroll_key'),
-                controller: _highlightedScrollController,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                scrollDirection: Axis.horizontal,
-                itemCount: destinations.length,
-                itemBuilder: (context, index) {
-                  // ... (El contenido de adentro sigue EXACTAMENTE IGUAL) ...
-                  final destination = destinations[index];
-                  final data = destination.data() as Map<String, dynamic>;
-                  data['id'] = destination.id;
+          // Función interna para dibujar la lista, así no repetimos código
+          Widget buildHighlightList(Box<Map>? box) {
+            return ListView.builder(
+              key: const PageStorageKey('highlights_scroll_key'),
+              controller: _highlightedScrollController,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              scrollDirection: Axis.horizontal,
+              itemCount: destinations.length,
+              itemBuilder: (context, index) {
+                final destination = destinations[index];
+                final data = destination.data() as Map<String, dynamic>;
+                data['id'] = destination.id;
 
-                  final isSaved = box.containsKey(destination.id);
+                // Si hay error en Hive, asumimos que no está guardado (false)
+                final isSaved =
+                    _hiveError ? false : box!.containsKey(destination.id);
 
-                  List<String> images = [];
-                  if (data['imagenes'] != null && data['imagenes'] is List) {
-                    images = List<String>.from(data['imagenes'])
-                        .where((e) => e.isNotEmpty)
-                        .toList();
-                  } else if (data['imagen'] != null &&
-                      data['imagen'] is String) {
-                    String cleaned = data['imagen']
-                        .toString()
-                        .replaceAll('[', '')
-                        .replaceAll(']', '');
-                    images = cleaned
-                        .split(',')
-                        .map((e) => e.trim())
-                        .where((e) => e.isNotEmpty)
-                        .toList();
-                  }
+                List<String> images = [];
+                if (data['imagenes'] != null && data['imagenes'] is List) {
+                  images = List<String>.from(data['imagenes'])
+                      .where((e) => e.isNotEmpty)
+                      .toList();
+                } else if (data['imagen'] != null && data['imagen'] is String) {
+                  String cleaned = data['imagen']
+                      .toString()
+                      .replaceAll('[', '')
+                      .replaceAll(']', '');
+                  images = cleaned
+                      .split(',')
+                      .map((e) => e.trim())
+                      .where((e) => e.isNotEmpty)
+                      .toList();
+                }
 
-                  String location = 'Venezuela';
-                  if (data['ubicacion'] != null &&
-                      data['ubicacion'].toString().isNotEmpty) {
-                    location = data['ubicacion'];
-                  } else {
-                    location = data['lugar'] ?? data['estado'] ?? 'Venezuela';
-                  }
+                String location = 'Venezuela';
+                if (data['ubicacion'] != null &&
+                    data['ubicacion'].toString().isNotEmpty) {
+                  location = data['ubicacion'];
+                } else {
+                  location = data['lugar'] ?? data['estado'] ?? 'Venezuela';
+                }
 
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 15),
-                    child: GestureDetector(
+                return Padding(
+                  padding: const EdgeInsets.only(right: 15),
+                  child: GestureDetector(
+                    onTap: () =>
+                        context.push('/d/${destination.id}', extra: data),
+                    child: DestinationCard(
+                      key: ValueKey(destination.id),
+                      images: images,
+                      title: data['nombre'] ?? 'Sin nombre',
+                      location: location,
+                      place: data['lugar'] ?? '',
+                      price: _getMinPrice(data['paquetes'] ?? []),
+                      isSaved: isSaved,
+                      onFavoriteTap: () {
+                        if (!_hiveError) {
+                          toggleSaveDestination(destination.id, data);
+                        }
+                      },
                       onTap: () =>
                           context.push('/d/${destination.id}', extra: data),
-                      child: DestinationCard(
-                        key: ValueKey(destination.id),
-                        images: images,
-                        title: data['nombre'] ?? 'Sin nombre',
-                        location: location,
-                        place: data['lugar'] ?? '',
-                        price: _getMinPrice(data['paquetes'] ?? []),
-                        isSaved: isSaved,
-                        onFavoriteTap: () =>
-                            toggleSaveDestination(destination.id, data),
-                        onTap: () =>
-                            context.push('/d/${destination.id}', extra: data),
-                        screenWidth: 280,
-                      ),
+                      screenWidth: 280,
                     ),
-                  );
-                },
-              );
-            },
+                  ),
+                );
+              },
+            );
+          }
+
+          // Si hay error de Hive, devolvemos la lista pasando null
+          if (_hiveError) {
+            return buildHighlightList(null);
+          }
+
+          // Si Hive funciona bien, usamos el ValueListenableBuilder
+          return ValueListenableBuilder(
+            valueListenable: savedDestinationsBox!.listenable(),
+            builder: (context, Box<Map> box, _) => buildHighlightList(box),
           );
         },
       ),

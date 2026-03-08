@@ -1,23 +1,23 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import '../../reservation_screen.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 const Color kPrimaryColor = Color.fromRGBO(17, 48, 73, 1);
 const Color kBackgroundColor = Color(0xFFF8F9FD);
 
 class DestinationDetailScreen extends StatefulWidget {
-  final Map<String, dynamic> destino;
+  final String destinationId;
   final String userId;
 
   const DestinationDetailScreen({
     super.key,
-    required this.destino,
+    required this.destinationId,
     required this.userId,
   });
 
@@ -29,142 +29,279 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
   final PageController _pageController = PageController();
   int _currentImageIndex = 0;
 
-  List<Map<String, dynamic>> selectedPackages = [];
-  late Box<Map> savedDestinationsBox;
+  // 🔥 SOLUCIÓN: Usamos List dinámico para los paquetes seleccionados
+  List<dynamic> selectedPackages = [];
+
+  // 🔥 SOLUCIÓN: Box sin tipado genérico estricto para evitar crash en Hive Web
+  Box? savedDestinationsBox;
+  Map<String, dynamic> fallbackSaved = {}; // Por si Hive falla
   bool isSaved = false;
 
-  // --- ELIMINÉ _sessionViews TEMPORALMENTE PARA QUE PUEDAS PROBAR VARIAS VECES ---
+  Map<String, dynamic>? _destino;
+  bool _isLoading = true;
+  String? _error;
+
+  final String _projectId = 'biqoe-app';
 
   @override
   void initState() {
     super.initState();
-    _initSavedBox();
-
-    // Ejecutamos el diagnóstico
-    _debugIncrementViewCount();
-  }
-
-  // --- LÓGICA DE VISITAS CON DIAGNÓSTICO ---
-  void _debugIncrementViewCount() {
-    if (kDebugMode) {
-      print("\n🔵 --- INICIO DIAGNÓSTICO DE VISTAS ---");
-    }
-
-    // 1. Ver qué datos llegaron realmente
-    final String? docIdFromMap = widget.destino['id'];
-    final String? nameFromMap = widget.destino['nombre'];
-    final String supplierId =
-        widget.destino['supplierId'] ?? widget.destino['supplier'] ?? '';
-
-    if (kDebugMode) {
-      print("1. Datos recibidos:");
-    }
-    if (kDebugMode) {
-      print("   - ID en el mapa (widget.destino['id']): $docIdFromMap");
-    }
-    if (kDebugMode) {
-      print("   - Nombre: $nameFromMap");
-    }
-    if (kDebugMode) {
-      print("   - Supplier ID (Dueño): $supplierId");
-    }
-    if (kDebugMode) {
-      print("   - Tu User ID actual: ${widget.userId}");
-    }
-
-    // 2. Determinar qué ID vamos a usar
-    // Si docIdFromMap es nulo, usará el nombre, y ESE ES EL ERROR COMÚN.
-    // Firestore necesita el ID "raro" (ej: 'ABC123xyz'), no el nombre "Playa".
-    final String targetDocId = docIdFromMap ?? '';
-
-    if (targetDocId.isEmpty) {
-      if (kDebugMode) {
-        print("❌ ERROR CRÍTICO: No se recibió un ID de documento válido.");
-      }
-      if (kDebugMode) {
-        print(
-            "   Solución: Revisa la pantalla ANTERIOR (donde haces el push).");
-      }
-      if (kDebugMode) {
-        print(
-            "   Asegúrate de hacer: data['id'] = doc.id; antes de enviar los datos.");
-      }
-      return;
-    }
-
-    // 3. Validación de Dueño
-    if (widget.userId == supplierId) {
-      if (kDebugMode) {
-        print(
-            "⚠️ AVISO: Eres el dueño de la actividad. No se contará la vista.");
-      }
-      return;
-    }
-
-    if (kDebugMode) {
-      print("2. Intentando actualizar Firestore...");
-    }
-    if (kDebugMode) {
-      print("   - Colección: destinos");
-    }
-    if (kDebugMode) {
-      print("   - Documento ID: $targetDocId");
-    }
-
-    // 4. Ejecutar escritura
-    // Usamos SET con MERGE para asegurar que si el campo no existe, lo cree.
-    FirebaseFirestore.instance.collection('destinos').doc(targetDocId).set({
-      'profileViews': FieldValue.increment(1),
-    }, SetOptions(merge: true)).then((_) {
-      if (kDebugMode) {
-        print("✅ ÉXITO TOTAL: Contador incrementado en la base de datos.");
-      }
-      if (kDebugMode) {
-        print("   Revisa tu consola de Firebase ahora.");
-      }
-    }).catchError((error) {
-      if (kDebugMode) {
-        print("❌ ERROR DE FIREBASE: $error");
-      }
-      if (error.toString().contains("permission-denied")) {
-        if (kDebugMode) {
-          print(
-              "   -> CAUSA: Reglas de seguridad. El usuario actual no tiene permiso de escritura.");
-        }
-      } else if (error.toString().contains("not-found")) {
-        if (kDebugMode) {
-          print(
-              "   -> CAUSA: El documento con ID '$targetDocId' no existe en la colección 'destinos'.");
-        }
-      }
+    _initSavedBox().then((_) {
+      _loadDestination();
     });
   }
 
   Future<void> _initSavedBox() async {
-    savedDestinationsBox =
-        await Hive.openBox<Map>('saved_destinations_${widget.userId}');
-    final key = widget.destino['id'] ?? widget.destino['nombre'];
-    if (mounted) {
-      setState(() {
-        isSaved = savedDestinationsBox.containsKey(key);
+    try {
+      savedDestinationsBox =
+          await Hive.openBox('saved_destinations_${widget.userId}');
+    } catch (e) {
+      debugPrint('Hive no disponible en este entorno: $e');
+    }
+  }
+
+  Future<void> _loadDestination() async {
+    try {
+      setState(() => _isLoading = true);
+
+      final url =
+          'https://firestore.googleapis.com/v1/projects/$_projectId/databases/(default)/documents/destinos/${widget.destinationId}';
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        // Obtenemos los datos puros sin forzar tipos
+        final dynamic data = jsonDecode(response.body);
+
+        // Lo pasamos a nuestro convertidor inmune a JS
+        final Map<String, dynamic> destino = _convertFirestoreMap(data);
+
+        if (mounted) {
+          setState(() {
+            _destino = destino;
+            _isLoading = false;
+
+            final key = destino['id']?.toString() ??
+                destino['nombre']?.toString() ??
+                '';
+            if (savedDestinationsBox != null) {
+              isSaved = savedDestinationsBox!.containsKey(key);
+            } else {
+              isSaved = fallbackSaved.containsKey(key);
+            }
+          });
+          _debugIncrementViewCount(); // fire-and-forget — no bloqueamos la UI
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _error = 'Error HTTP: ${response.statusCode}';
+            _isLoading = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Error procesando datos: $e';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // =====================================================================
+  // 🔥 EL CONVERTIDOR DEFINITIVO: 100% INMUNE A "MINIFIED ERRORS"
+  // Recibe un 'dynamic' y analiza paso por paso sin usar 'as Map' en la cabecera
+  // =====================================================================
+  Map<String, dynamic> _convertFirestoreMap(dynamic firestoreDoc) {
+    final result = <String, dynamic>{};
+
+    if (firestoreDoc == null || firestoreDoc is! Map) {
+      return result;
+    }
+
+    final fields = firestoreDoc['fields'];
+    if (fields is Map) {
+      for (final keyObj in fields.keys) {
+        final String keyStr = keyObj.toString();
+        final valueObj = fields[keyObj];
+
+        if (valueObj is Map) {
+          if (valueObj.containsKey('stringValue')) {
+            result[keyStr] = valueObj['stringValue'];
+          } else if (valueObj.containsKey('integerValue')) {
+            result[keyStr] =
+                int.tryParse(valueObj['integerValue'].toString()) ?? 0;
+          } else if (valueObj.containsKey('doubleValue')) {
+            var dv = valueObj['doubleValue'];
+            result[keyStr] = (dv is num)
+                ? dv.toDouble()
+                : double.tryParse(dv.toString()) ?? 0.0;
+          } else if (valueObj.containsKey('booleanValue')) {
+            result[keyStr] = valueObj['booleanValue'] == true;
+          } else if (valueObj.containsKey('timestampValue')) {
+            result[keyStr] = valueObj['timestampValue'];
+          } else if (valueObj.containsKey('arrayValue')) {
+            var arrVal = valueObj['arrayValue'];
+            if (arrVal is Map && arrVal.containsKey('values')) {
+              var values = arrVal['values'];
+              if (values is Iterable) {
+                List<dynamic> list = [];
+                for (var item in values) {
+                  if (item is Map) {
+                    if (item.containsKey('mapValue')) {
+                      var mapVal = item['mapValue'];
+                      if (mapVal is Map && mapVal.containsKey('fields')) {
+                        list.add(
+                            _convertFirestoreMap({'fields': mapVal['fields']}));
+                      } else {
+                        list.add(item);
+                      }
+                    } else {
+                      list.add(_extractPrimitiveValue(item));
+                    }
+                  } else {
+                    list.add(item);
+                  }
+                }
+                result[keyStr] = list;
+              } else {
+                result[keyStr] = [];
+              }
+            } else {
+              result[keyStr] = [];
+            }
+          } else if (valueObj.containsKey('mapValue')) {
+            var mapVal = valueObj['mapValue'];
+            if (mapVal is Map && mapVal.containsKey('fields')) {
+              result[keyStr] =
+                  _convertFirestoreMap({'fields': mapVal['fields']});
+            } else {
+              result[keyStr] = valueObj;
+            }
+          } else {
+            result[keyStr] = valueObj;
+          }
+        } else {
+          result[keyStr] = valueObj;
+        }
+      }
+    }
+
+    var name = firestoreDoc['name'];
+    if (name is String) {
+      final nameParts = name.split('/');
+      result['id'] = nameParts.isNotEmpty ? nameParts.last : '';
+    } else {
+      result['id'] = '';
+    }
+
+    return result;
+  }
+
+  dynamic _extractPrimitiveValue(dynamic element) {
+    if (element is Map) {
+      if (element.containsKey('stringValue')) return element['stringValue'];
+      if (element.containsKey('integerValue')) {
+        return int.tryParse(element['integerValue'].toString()) ?? 0;
+      }
+      if (element.containsKey('doubleValue')) {
+        var dv = element['doubleValue'];
+        return (dv is num)
+            ? dv.toDouble()
+            : double.tryParse(dv.toString()) ?? 0.0;
+      }
+      if (element.containsKey('booleanValue')) {
+        return element['booleanValue'] == true;
+      }
+    }
+    return element;
+  }
+
+  // Incrementa las vistas del destino via REST — funciona en Safari/web
+  // porque no depende del SDK de Firestore (que usa IndexedDB, bloqueado por Safari).
+  // Usa el endpoint :commit con una transformación INCREMENT que es atómica.
+  Future<void> _debugIncrementViewCount() async {
+    if (_destino == null) return;
+
+    final String? docId = _destino!['id']?.toString();
+    final String supplierId = _destino!['supplierId']?.toString() ??
+        _destino!['supplier']?.toString() ??
+        '';
+
+    if (docId == null || docId.isEmpty) return;
+    if (widget.userId == supplierId) {
+      return; // El proveedor no cuenta su propia visita
+    }
+
+    const String apiKey = 'AIzaSyD6gvIVnsBg9QSdP04gM3qgzEjKI5FjEEU';
+    const String projectId = 'biqoe-app';
+
+    try {
+      // :commit con fieldTransform INCREMENT — idéntico a FieldValue.increment(1)
+      // pero vía HTTP REST, compatible con Safari y cualquier navegador.
+      final commitUrl =
+          'https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents:commit?key=$apiKey';
+
+      final body = jsonEncode({
+        'writes': [
+          {
+            'transform': {
+              'document':
+                  'projects/$projectId/databases/(default)/documents/destinos/$docId',
+              'fieldTransforms': [
+                {
+                  'fieldPath': 'profileViews',
+                  'increment': {'integerValue': '1'},
+                }
+              ],
+            }
+          }
+        ]
       });
+
+      final response = await http
+          .post(
+            Uri.parse(commitUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: body,
+          )
+          .timeout(const Duration(seconds: 8));
+
+      debugPrint(
+          '[Views] increment destino=$docId status=${response.statusCode}');
+    } catch (e) {
+      debugPrint('[Views] error incrementando vistas: $e');
     }
   }
 
   void _toggleSaveDestination() {
-    final destinationId = widget.destino['id'] ?? widget.destino['nombre'];
+    if (_destino == null) return;
+
+    final destinationId =
+        _destino!['id']?.toString() ?? _destino!['nombre']?.toString() ?? '';
     setState(() {
-      if (savedDestinationsBox.containsKey(destinationId)) {
-        savedDestinationsBox.delete(destinationId);
-        isSaved = false;
+      if (savedDestinationsBox != null) {
+        if (savedDestinationsBox!.containsKey(destinationId)) {
+          savedDestinationsBox!.delete(destinationId);
+          isSaved = false;
+        } else {
+          savedDestinationsBox!.put(destinationId, _destino!);
+          isSaved = true;
+        }
       } else {
-        savedDestinationsBox.put(destinationId, widget.destino);
-        isSaved = true;
+        if (fallbackSaved.containsKey(destinationId)) {
+          fallbackSaved.remove(destinationId);
+          isSaved = false;
+        } else {
+          fallbackSaved[destinationId] = _destino!;
+          isSaved = true;
+        }
       }
     });
   }
 
-  void _togglePackageSelection(Map<String, dynamic> paquete) {
+  void _togglePackageSelection(dynamic paquete) {
     setState(() {
       if (selectedPackages.contains(paquete)) {
         selectedPackages.remove(paquete);
@@ -184,43 +321,91 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // --- DATOS SEGUROS ---
-    final List<String> images =
-        (widget.destino['imagenes'] as List?)?.cast<String>() ??
-            (widget.destino['imagen'] as List?)?.cast<String>() ??
-            [];
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(),
+      );
+    }
 
-    // --- CORRECCIÓN DE UBICACIÓN (ZONA + ESTADO) ---
+    if (_error != null || _destino == null) {
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: kBackgroundColor,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.black),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: SelectableText(
+              _error ?? 'Destino no encontrado\nID: ${widget.destinationId}',
+              style: const TextStyle(color: Colors.red),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final destino = _destino!;
+
+    // Extracción de imágenes sin casteos forzados
+    final List<String> images = [];
+    final rawImages = destino['imagenes'] ?? destino['imagen'];
+    if (rawImages is Iterable) {
+      for (var img in rawImages) {
+        images.add(img.toString());
+      }
+    } else if (rawImages is String) {
+      images.add(rawImages);
+    }
+
     String locationText = "Ubicación por definir";
     List<String> locParts = [];
 
-    // Validamos que existan y no estén vacíos ni sean "null" string
-    if (widget.destino['lugar'] != null &&
-        widget.destino['lugar'].toString().isNotEmpty &&
-        widget.destino['lugar'].toString() != 'null') {
-      locParts.add(widget.destino['lugar']);
+    if (destino['lugar'] != null &&
+        destino['lugar'].toString().isNotEmpty &&
+        destino['lugar'].toString() != 'null') {
+      locParts.add(destino['lugar'].toString());
     }
-    if (widget.destino['estado'] != null &&
-        widget.destino['estado'].toString().isNotEmpty &&
-        widget.destino['estado'].toString() != 'null') {
-      locParts.add(widget.destino['estado']);
+    if (destino['estado'] != null &&
+        destino['estado'].toString().isNotEmpty &&
+        destino['estado'].toString() != 'null') {
+      locParts.add(destino['estado'].toString());
     }
 
     if (locParts.isNotEmpty) {
       locationText = locParts.join(", ");
-    } else if (widget.destino['ubicacion'] != null) {
-      locationText = widget.destino['ubicacion'];
+    } else if (destino['ubicacion'] != null) {
+      locationText = destino['ubicacion'].toString();
     }
 
-    final String mapsLink =
-        widget.destino['googleMapsLink'] ?? widget.destino['coordenadas'] ?? '';
-    final String supplierId =
-        widget.destino['supplierId'] ?? widget.destino['supplier'] ?? '';
-    final List paquetes = widget.destino['paquetes'] ?? [];
+    final String mapsLink = destino['googleMapsLink']?.toString() ??
+        destino['coordenadas']?.toString() ??
+        '';
+    final String supplierId = destino['supplierId']?.toString() ??
+        destino['supplier']?.toString() ??
+        '';
 
-    // OBTENEMOS EL ID PARA LA RESERVA
-    // Si el mapa no trae 'id', usamos el nombre como fallback (aunque lo ideal es siempre tener ID)
-    final String docId = widget.destino['id'] ?? widget.destino['nombre'] ?? '';
+    final rawPaquetes = destino['paquetes'];
+    final List<dynamic> paquetes =
+        rawPaquetes is Iterable ? rawPaquetes.toList() : [];
+    final String docId =
+        destino['id']?.toString() ?? destino['nombre']?.toString() ?? '';
+
+    // Cálculo seguro del total a pagar
+    double totalPrice = 0.0;
+    for (var item in selectedPackages) {
+      if (item is Map) {
+        var p = item['precio'];
+        if (p is num) {
+          totalPrice += p.toDouble();
+          // ignore: curly_braces_in_flow_control_structures
+        } else if (p is String) totalPrice += (double.tryParse(p) ?? 0.0);
+      }
+    }
 
     return Scaffold(
       backgroundColor: kBackgroundColor,
@@ -229,7 +414,6 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
           CustomScrollView(
             physics: const BouncingScrollPhysics(),
             slivers: [
-              // --- 1. HEADER PARALLAX ---
               SliverAppBar(
                 expandedHeight: 350.0,
                 pinned: true,
@@ -239,9 +423,8 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                 leading: Container(
                   margin: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.9),
-                    shape: BoxShape.circle,
-                  ),
+                      color: Colors.white.withValues(alpha: 0.9),
+                      shape: BoxShape.circle),
                   child: IconButton(
                     icon: const Icon(Icons.arrow_back,
                         color: Colors.black, size: 20),
@@ -252,15 +435,12 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                   Container(
                     margin: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      shape: BoxShape.circle,
-                    ),
+                        color: Colors.white.withValues(alpha: 0.9),
+                        shape: BoxShape.circle),
                     child: IconButton(
                       icon: Icon(
                         isSaved ? Icons.favorite : Icons.favorite_border,
-                        color: isSaved
-                            ? Color.fromRGBO(17, 48, 73, 1)
-                            : Colors.black,
+                        color: isSaved ? kPrimaryColor : Colors.black,
                         size: 22,
                       ),
                       onPressed: _toggleSaveDestination,
@@ -274,7 +454,6 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                     children: [
                       if (images.isNotEmpty)
                         PageView.builder(
-                          // FIX: AlwaysScrollableScrollPhysics para que funcione el swipe
                           physics: const AlwaysScrollableScrollPhysics(),
                           controller: _pageController,
                           itemCount: images.length,
@@ -300,8 +479,6 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                           child: const Icon(Icons.image_not_supported,
                               size: 60, color: Colors.grey),
                         ),
-
-                      // Gradiente (IgnorePointer para no bloquear swipe)
                       IgnorePointer(
                         child: const DecoratedBox(
                           decoration: BoxDecoration(
@@ -314,11 +491,9 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                           ),
                         ),
                       ),
-
-                      // Puntos indicadores (IgnorePointer para no bloquear swipe)
                       if (images.length > 1)
                         Positioned(
-                          bottom: 60,
+                          bottom: 16,
                           left: 0,
                           right: 0,
                           child: IgnorePointer(
@@ -346,8 +521,6 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                   ),
                 ),
               ),
-
-              // --- 2. CONTENIDO PRINCIPAL ---
               SliverToBoxAdapter(
                 child: Container(
                   transform: Matrix4.translationValues(0, -30, 0),
@@ -361,7 +534,6 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // TÍTULO Y UBICACIÓN
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -370,7 +542,8 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    widget.destino['nombre'] ?? 'Sin nombre',
+                                    destino['nombre']?.toString() ??
+                                        'Sin nombre',
                                     style: GoogleFonts.poppins(
                                         fontSize: 26,
                                         fontWeight: FontWeight.bold,
@@ -420,17 +593,13 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                               )
                           ],
                         ),
-
                         const SizedBox(height: 30),
-
-                        // TÍTULO DE PAQUETES
                         Text(
                           "Selecciona tu experiencia",
                           style: GoogleFonts.poppins(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: kPrimaryColor,
-                          ),
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: kPrimaryColor),
                         ),
                         const SizedBox(height: 5),
                         Text(
@@ -439,8 +608,6 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                               fontSize: 12, color: Colors.grey),
                         ),
                         const SizedBox(height: 20),
-
-                        // LISTA DE PAQUETES
                         if (paquetes.isEmpty)
                           _buildEmptyState()
                         else
@@ -453,7 +620,7 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                                 const SizedBox(height: 15),
                             itemBuilder: (context, index) {
                               final paquete =
-                                  paquetes[index] as Map<String, dynamic>;
+                                  paquetes[index] is Map ? paquetes[index] : {};
                               final isSelected =
                                   selectedPackages.contains(paquete);
 
@@ -465,7 +632,6 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                               );
                             },
                           ),
-
                         const SizedBox(height: 100),
                       ],
                     ),
@@ -474,8 +640,6 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
               ),
             ],
           ),
-
-          // --- 3. BARRA INFERIOR ---
           Positioned(
             bottom: 0,
             left: 0,
@@ -486,10 +650,9 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                 color: Colors.white,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 20,
-                    offset: const Offset(0, -5),
-                  )
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 20,
+                      offset: const Offset(0, -5))
                 ],
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(20)),
@@ -503,15 +666,11 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          Text("Total estimado",
+                              style: GoogleFonts.poppins(
+                                  fontSize: 12, color: Colors.grey)),
                           Text(
-                            "Total estimado",
-                            style: GoogleFonts.poppins(
-                                fontSize: 12, color: Colors.grey),
-                          ),
-                          Text(
-                            selectedPackages.isEmpty
-                                ? "\$0.00"
-                                : "\$${selectedPackages.fold<double>(0, (accumulator, item) => accumulator + (item['precio'] ?? 0)).toStringAsFixed(2)}",
+                            "\$${totalPrice.toStringAsFixed(2)}",
                             style: GoogleFonts.poppins(
                                 fontSize: 22,
                                 fontWeight: FontWeight.bold,
@@ -529,14 +688,20 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                                 MaterialPageRoute(
                                   builder: (context) => ReservationScreen(
                                     userId: widget.userId,
-                                    selectedPackages: selectedPackages,
-                                    planName:
-                                        widget.destino['nombre'] ?? 'Reserva',
+                                    selectedPackages: selectedPackages.map((e) {
+                                      final safeMap = <String, dynamic>{};
+                                      if (e is Map) {
+                                        for (var k in e.keys) {
+                                          safeMap[k.toString()] = e[k];
+                                        }
+                                      }
+                                      return safeMap;
+                                    }).toList(),
+                                    planName: destino['nombre']?.toString() ??
+                                        'Reserva',
                                     location: locationText,
                                     supplier: supplierId,
-                                    // --- FIX CRÍTICO: PASAMOS EL ID CORRECTO ---
                                     destinationId: docId,
-                                    // ------------------------------------------
                                   ),
                                 ),
                               );
@@ -551,13 +716,11 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                             borderRadius: BorderRadius.circular(14)),
                         elevation: selectedPackages.isNotEmpty ? 5 : 0,
                       ),
-                      child: Text(
-                        "Continuar",
-                        style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white),
-                      ),
+                      child: Text("Continuar",
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white)),
                     ),
                   ],
                 ),
@@ -589,12 +752,8 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
   }
 }
 
-// =============================================================================
-// WIDGET: TARJETA DE PAQUETE EXPANDIBLE
-// =============================================================================
-
 class _ExpandablePackageCard extends StatefulWidget {
-  final Map<String, dynamic> paquete;
+  final dynamic paquete;
   final bool isSelected;
   final VoidCallback onToggleSelection;
 
@@ -614,19 +773,24 @@ class _ExpandablePackageCardState extends State<_ExpandablePackageCard>
 
   @override
   Widget build(BuildContext context) {
-    IconData iconType = Icons.local_activity_outlined;
-    if (widget.paquete['tipo'] == 'dated') {
-      iconType = Icons.calendar_month_outlined;
-    } else if (widget.paquete['tipo'] == 'flexible') {
-      iconType = Icons.confirmation_number_outlined;
-    }
+    final Map pq = widget.paquete is Map ? widget.paquete as Map : {};
 
-    // --- CÁLCULO SEGURO DE CUOTAS ---
+    IconData iconType = Icons.local_activity_outlined;
+    if (pq['tipo'] == 'dated') {
+      iconType = Icons.calendar_month_outlined;
+    } else if (pq['tipo'] == 'flexible')
+      // ignore: curly_braces_in_flow_control_structures
+      iconType = Icons.confirmation_number_outlined;
+
     int cuotasCount = 0;
-    if (widget.paquete['cantidadCuotas'] != null) {
-      cuotasCount = widget.paquete['cantidadCuotas'];
-    } else if (widget.paquete['configuracionCuotas'] is List) {
-      cuotasCount = (widget.paquete['configuracionCuotas'] as List).length;
+    if (pq['cantidadCuotas'] != null) {
+      final cq = pq['cantidadCuotas'];
+      if (cq is num) {
+        cuotasCount = cq.toInt();
+        // ignore: curly_braces_in_flow_control_structures
+      } else if (cq is String) cuotasCount = int.tryParse(cq) ?? 0;
+    } else if (pq['configuracionCuotas'] is Iterable) {
+      cuotasCount = (pq['configuracionCuotas'] as Iterable).length;
     }
 
     return AnimatedContainer(
@@ -636,21 +800,18 @@ class _ExpandablePackageCardState extends State<_ExpandablePackageCard>
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: widget.isSelected ? kPrimaryColor : Colors.grey.shade200,
-          width: widget.isSelected ? 2 : 1,
-        ),
+            color: widget.isSelected ? kPrimaryColor : Colors.grey.shade200,
+            width: widget.isSelected ? 2 : 1),
         boxShadow: [
           BoxShadow(
-            color:
-                Colors.black.withValues(alpha: widget.isSelected ? 0.08 : 0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          )
+              color: Colors.black
+                  .withValues(alpha: widget.isSelected ? 0.08 : 0.03),
+              blurRadius: 15,
+              offset: const Offset(0, 5))
         ],
       ),
       child: Column(
         children: [
-          // --- HEADER ---
           InkWell(
             onTap: () => setState(() => _isExpanded = !_isExpanded),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
@@ -661,9 +822,8 @@ class _ExpandablePackageCardState extends State<_ExpandablePackageCard>
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: kPrimaryColor.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                        color: kPrimaryColor.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(10)),
                     child: Icon(iconType, color: kPrimaryColor, size: 20),
                   ),
                   const SizedBox(width: 12),
@@ -672,14 +832,14 @@ class _ExpandablePackageCardState extends State<_ExpandablePackageCard>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          widget.paquete['miniDescripcion'] ?? 'Paquete',
+                          pq['miniDescripcion']?.toString() ?? 'Paquete',
                           style: GoogleFonts.poppins(
                               fontWeight: FontWeight.bold,
                               fontSize: 15,
                               color: Colors.black87),
                         ),
                         Text(
-                          widget.paquete['tipo'] == 'dated'
+                          pq['tipo'] == 'dated'
                               ? 'Reserva por fecha'
                               : 'Ticket / Pase',
                           style: GoogleFonts.poppins(
@@ -692,7 +852,7 @@ class _ExpandablePackageCardState extends State<_ExpandablePackageCard>
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        "\$${widget.paquete['precio']}",
+                        "\$${pq['precio'] ?? '0'}",
                         style: GoogleFonts.poppins(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
@@ -726,8 +886,6 @@ class _ExpandablePackageCardState extends State<_ExpandablePackageCard>
               ),
             ),
           ),
-
-          // --- CUERPO ---
           AnimatedSize(
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOut,
@@ -748,7 +906,7 @@ class _ExpandablePackageCardState extends State<_ExpandablePackageCard>
                                     color: Colors.grey[700])),
                             const SizedBox(height: 8),
                             MarkdownBody(
-                              data: widget.paquete['descripcion'] ??
+                              data: pq['descripcion']?.toString() ??
                                   'Sin descripción detallada.',
                               styleSheet: MarkdownStyleSheet(
                                 p: GoogleFonts.poppins(
@@ -761,7 +919,7 @@ class _ExpandablePackageCardState extends State<_ExpandablePackageCard>
                                     const TextStyle(color: kPrimaryColor),
                               ),
                             ),
-                            if (widget.paquete['tieneCuotas'] == true) ...[
+                            if (pq['tieneCuotas'] == true) ...[
                               const SizedBox(height: 15),
                               Container(
                                 padding: const EdgeInsets.symmetric(

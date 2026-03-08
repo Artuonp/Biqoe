@@ -1,10 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:go_router/go_router.dart'; // Importamos GoRouter
+import 'package:go_router/go_router.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class LoginFormScreen extends StatefulWidget {
   const LoginFormScreen({super.key});
@@ -16,40 +17,84 @@ class LoginFormScreen extends StatefulWidget {
 class LoginFormScreenState extends State<LoginFormScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  void _login() async {
+  FirebaseAuth get _auth => FirebaseAuth.instance;
+
+  // ── Persistencia segura para web ────────────────────────────────────────
+  // IMPORTANTE: Esta función NO debe llamarse antes de signInWithPopup en web.
+  // El popup de OAuth necesita cookies/session para funcionar; llamar
+  // setPersistence(NONE) antes lo rompe. Solo la llamamos para email/password.
+  Future<void> _setSafePersistenceForEmailLogin() async {
+    if (kIsWeb) {
+      try {
+        // SESSION es más compatible en web que NONE — funciona aunque Safari
+        // bloquee IndexedDB, y no interfiere con el flujo de popups OAuth.
+        await _auth.setPersistence(Persistence.SESSION);
+        debugPrint('[Auth] Persistencia web: SESSION');
+      } catch (e) {
+        debugPrint('[Auth] No se pudo setear persistencia: $e');
+      }
+    }
+  }
+
+  // ── Helper: consulta isSupplier → navega al destino correcto ────────────
+  Future<void> _navigateAfterLogin(String userId) async {
+    debugPrint('[Auth] _navigateAfterLogin uid=$userId');
     try {
-      String email = _emailController.text.trim();
-      String password = _passwordController.text.trim();
-
-      if (email.isEmpty) {
-        _showErrorMessage('Por favor, ingrese su correo electrónico.');
+      final userDoc = await FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(userId)
+          .get();
+      if (!mounted) return;
+      if (!userDoc.exists) {
+        debugPrint(
+            '[Auth] Usuario no encontrado en Firestore, cerrando sesión');
+        await _auth.signOut();
+        _showErrorMessage('La cuenta no está registrada.');
         return;
       }
+      final bool isSupplier = userDoc.data()?['isSupplier'] == true;
+      debugPrint(
+          '[Auth] isSupplier=$isSupplier → navegando a ${isSupplier ? '/supplier/dashboard' : '/'}');
+      if (!mounted) return;
+      context.go(isSupplier ? '/supplier/dashboard' : '/');
+    } catch (e, stack) {
+      debugPrint('[Auth] Error en _navigateAfterLogin: $e\n$stack');
+      if (mounted) context.go('/');
+    }
+  }
 
-      if (password.isEmpty) {
-        _showErrorMessage('Por favor, ingrese su contraseña.');
-        return;
-      }
+  // ── Login con email/contraseña ───────────────────────────────────────────
+  void _login() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
 
-      UserCredential userCredential = await _auth.signInWithEmailAndPassword(
+    if (email.isEmpty) {
+      _showErrorMessage('Por favor, ingrese su correo electrónico.');
+      return;
+    }
+    if (password.isEmpty) {
+      _showErrorMessage('Por favor, ingrese su contraseña.');
+      return;
+    }
+
+    try {
+      await _setSafePersistenceForEmailLogin();
+      debugPrint('[Auth] Intentando email login: $email');
+
+      final userCredential = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
+      debugPrint('[Auth] Email login OK uid=${userCredential.user?.uid}');
 
       if (!mounted) return;
-
       if (userCredential.user != null) {
-        // CAMBIO IMPORTANTE:
-        // No verificamos emailVerified aquí para no bloquear el acceso si no es estricto.
-        // Si quieres obligar verificación, descomenta el if/else.
-
-        // Simplemente vamos al Home. El Router verifica el usuario.
-        context.go('/');
+        await _navigateAfterLogin(userCredential.user!.uid);
       }
     } on FirebaseAuthException catch (e) {
-      // Manejo de errores simplificado
+      debugPrint(
+          '[Auth] FirebaseAuthException code=${e.code} msg=${e.message}');
       String msg = 'Ocurrió un error inesperado.';
       if (e.code == 'user-not-found' ||
           e.code == 'wrong-password' ||
@@ -60,119 +105,158 @@ class LoginFormScreenState extends State<LoginFormScreen> {
       } else if (e.code == 'user-disabled') {
         msg = 'Esta cuenta ha sido deshabilitada.';
       }
-
       if (mounted) _showErrorMessage(msg);
+    } catch (e, stack) {
+      debugPrint('[Auth] Error inesperado en _login: $e\n$stack');
+      if (mounted) {
+        _showErrorMessage(
+            'Tu navegador bloqueó el inicio de sesión. Desactiva el bloqueo de rastreo en Safari.');
+      }
     }
   }
 
   Future<void> _sendPasswordResetEmail() async {
-    String email = _emailController.text.trim();
-
+    final email = _emailController.text.trim();
     if (email.isEmpty) {
       _showErrorMessage(
           'Escribe tu correo en el campo de arriba para recuperarla.');
       return;
     }
-
     try {
-      // Navegamos a la pantalla de reset pasando el email
-      // Nota: Debemos registrar esta ruta en app_router.dart
       context.push('/forgot-password', extra: email);
     } catch (e) {
       _showErrorMessage('Error al navegar: $e');
     }
   }
 
+  // ── Login con Google ─────────────────────────────────────────────────────
   Future<void> signInWithGoogle() async {
+    debugPrint('[Auth] signInWithGoogle iniciado. kIsWeb=$kIsWeb');
     try {
-      await GoogleSignIn().signOut(); // Forzar selección de cuenta
-      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+      UserCredential userCredential;
 
-      if (googleUser == null) return; // Usuario canceló
-
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
-      final AuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      UserCredential userCredential =
-          await _auth.signInWithCredential(credential);
+      if (kIsWeb) {
+        // ── WEB ─────────────────────────────────────────────────────────────
+        // NO llamar _setSafePersistence antes del popup — interfiere con OAuth.
+        // signInWithPopup abre el diálogo de cuentas de Google de Firebase,
+        // que los navegadores sí permiten (a diferencia de GoogleSignIn().signIn()
+        // que abre una ventana del SO bloqueada como popup no autorizado).
+        debugPrint('[Auth] Web: usando signInWithPopup(GoogleAuthProvider)');
+        final provider = GoogleAuthProvider();
+        provider.addScope('email');
+        userCredential = await _auth.signInWithPopup(provider);
+        debugPrint(
+            '[Auth] signInWithPopup completado. user=${userCredential.user?.email}');
+      } else {
+        // ── MÓVIL ────────────────────────────────────────────────────────────
+        debugPrint('[Auth] Móvil: usando GoogleSignIn nativo');
+        final credential = await _googleSignInNative();
+        if (credential == null) {
+          debugPrint('[Auth] Google sign-in cancelado o falló en nativo');
+          return;
+        }
+        userCredential = await _auth.signInWithCredential(credential);
+        debugPrint(
+            '[Auth] Credential nativo OK uid=${userCredential.user?.uid}');
+      }
 
       if (!mounted) return;
-
       if (userCredential.user != null) {
-        String userId = userCredential.user!.uid;
-
-        // Verificamos si existe en Firestore
-        final userDoc = await FirebaseFirestore.instance
-            .collection('usuarios')
-            .doc(userId)
-            .get();
-
-        if (userDoc.exists) {
-          if (!mounted) return;
-          context.go('/'); // Navegación exitosa al Home
-        } else {
-          await _auth.signOut();
-          if (mounted) {
-            _showErrorMessage(
-                'La cuenta de Google no está registrada en la aplicación.');
-          }
-        }
+        await _navigateAfterLogin(userCredential.user!.uid);
       }
-    } catch (e) {
-      debugPrint('Error Google Sign In: $e');
-      if (mounted) _showErrorMessage('Error al iniciar sesión con Google.');
+    } on FirebaseAuthException catch (e) {
+      debugPrint(
+          '[Auth] FirebaseAuthException Google: code=${e.code} msg=${e.message}');
+      if (mounted) {
+        _showErrorMessage(
+            'Error Google [${e.code}]: ${e.message ?? "Intenta de nuevo."}');
+      }
+    } catch (e, stack) {
+      debugPrint('[Auth] Error en signInWithGoogle: $e\n$stack');
+      if (mounted) {
+        _showErrorMessage(
+            'Ocurrió un error al iniciar sesión con Google. Intenta más tarde.');
+      }
     }
   }
 
-  Future<void> signInWithApple() async {
+  Future<AuthCredential?> _googleSignInNative() async {
     try {
-      final appleCredential = await SignInWithApple.getAppleIDCredential(
-        scopes: [
-          AppleIDAuthorizationScopes.email,
-          AppleIDAuthorizationScopes.fullName,
-        ],
-        webAuthenticationOptions: WebAuthenticationOptions(
-          clientId: 'com.biqoe.app.SiwA',
-          redirectUri: Uri.parse(
-            'https://biqoe-app.firebaseapp.com/__/auth/handler',
+      // ignore: depend_on_referenced_packages
+      final GoogleSignIn googleSignIn = GoogleSignIn();
+      await googleSignIn.signOut();
+      final googleUser = await googleSignIn.signIn();
+      if (googleUser == null) return null;
+      final googleAuth = await googleUser.authentication;
+      return GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+    } catch (e) {
+      debugPrint('[Auth] _googleSignInNative error: $e');
+      return null;
+    }
+  }
+
+  // ── Login con Apple ──────────────────────────────────────────────────────
+  Future<void> signInWithApple() async {
+    debugPrint('[Auth] signInWithApple iniciado. kIsWeb=$kIsWeb');
+    try {
+      UserCredential userCredential;
+
+      if (kIsWeb) {
+        // ── WEB ─────────────────────────────────────────────────────────────
+        // OAuthProvider('apple.com') + signInWithPopup es el método correcto.
+        // SignInWithApple.getAppleIDCredential() no funciona en web — abre una
+        // ventana del SO que el browser bloquea.
+        debugPrint(
+            '[Auth] Web: usando signInWithPopup(OAuthProvider apple.com)');
+        final provider = OAuthProvider('apple.com');
+        provider.addScope('email');
+        provider.addScope('name');
+        userCredential = await _auth.signInWithPopup(provider);
+        debugPrint(
+            '[Auth] Apple popup completado. user=${userCredential.user?.email}');
+      } else {
+        // ── MÓVIL ────────────────────────────────────────────────────────────
+        debugPrint('[Auth] Móvil: usando SignInWithApple nativo');
+        final appleCredential = await SignInWithApple.getAppleIDCredential(
+          scopes: [
+            AppleIDAuthorizationScopes.email,
+            AppleIDAuthorizationScopes.fullName,
+          ],
+          webAuthenticationOptions: WebAuthenticationOptions(
+            clientId: 'com.biqoe.app.SiwA',
+            redirectUri:
+                Uri.parse('https://biqoe-app.firebaseapp.com/__/auth/handler'),
           ),
-        ),
-      );
-
-      final oAuthProvider = OAuthProvider("apple.com");
-      final credential = oAuthProvider.credential(
-        idToken: appleCredential.identityToken,
-        accessToken: appleCredential.authorizationCode,
-      );
-
-      final userCredential = await _auth.signInWithCredential(credential);
+        );
+        final oAuthProvider = OAuthProvider('apple.com');
+        final credential = oAuthProvider.credential(
+          idToken: appleCredential.identityToken,
+          accessToken: appleCredential.authorizationCode,
+        );
+        userCredential = await _auth.signInWithCredential(credential);
+        debugPrint('[Auth] Apple nativo OK uid=${userCredential.user?.uid}');
+      }
 
       if (!mounted) return;
-
       if (userCredential.user != null) {
-        String userId = userCredential.user!.uid;
-        final userDoc = await FirebaseFirestore.instance
-            .collection('usuarios')
-            .doc(userId)
-            .get();
-
-        if (userDoc.exists) {
-          if (!mounted) return;
-          context.go('/'); // Navegación exitosa al Home
-        } else {
-          await _auth.signOut();
-          if (mounted) {
-            _showErrorMessage('La cuenta de Apple no está registrada.');
-          }
-        }
+        await _navigateAfterLogin(userCredential.user!.uid);
       }
-    } catch (e) {
-      debugPrint('Error Apple Sign In: $e');
-      if (mounted) _showErrorMessage('Error al iniciar sesión con Apple.');
+    } on FirebaseAuthException catch (e) {
+      debugPrint(
+          '[Auth] FirebaseAuthException Apple: code=${e.code} msg=${e.message}');
+      if (mounted) {
+        _showErrorMessage(
+            'Error Apple [${e.code}]: ${e.message ?? "Intenta de nuevo."}');
+      }
+    } catch (e, stack) {
+      debugPrint('[Auth] Error en signInWithApple: $e\n$stack');
+      if (mounted) {
+        _showErrorMessage(
+            'Ocurrió un error al iniciar sesión con Apple. Intenta más tarde.');
+      }
     }
   }
 
@@ -182,9 +266,6 @@ class LoginFormScreenState extends State<LoginFormScreen> {
         content: Text(message, style: const TextStyle(fontFamily: 'Poppins')),
         backgroundColor: Colors.red,
         behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16.0),
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
       ),
     );
   }
@@ -200,11 +281,9 @@ class LoginFormScreenState extends State<LoginFormScreen> {
           icon: const Icon(Icons.arrow_back,
               color: Color.fromRGBO(17, 48, 73, 1)),
           onPressed: () {
-            // CAMBIO: Usamos context.pop() de GoRouter
             if (context.canPop()) {
               context.pop();
             } else {
-              // Si no puede volver (ej: recarga web), redirigir a login
               context.go('/login');
             }
           },
@@ -222,64 +301,42 @@ class LoginFormScreenState extends State<LoginFormScreen> {
                 child: Text(
                   'Inicio de sesión',
                   style: TextStyle(
-                    fontSize: 32.0,
-                    fontWeight: FontWeight.bold,
-                    fontFamily: 'Poppins',
-                    color: Color.fromRGBO(17, 48, 73, 1),
-                  ),
+                      fontSize: 32.0,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Poppins',
+                      color: Color.fromRGBO(17, 48, 73, 1)),
                 ),
               ),
               const SizedBox(height: 20.0),
-
-              // CAMPO EMAIL
               TextField(
                 controller: _emailController,
                 decoration: const InputDecoration(
                   hintText: 'Correo electrónico',
                   border: UnderlineInputBorder(),
-                  hintStyle: TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Color.fromRGBO(17, 48, 73, 1),
-                  ),
                   enabledBorder: UnderlineInputBorder(
-                    borderSide:
-                        BorderSide(color: Color.fromRGBO(17, 48, 73, 1)),
-                  ),
+                      borderSide:
+                          BorderSide(color: Color.fromRGBO(17, 48, 73, 1))),
                 ),
-                style: const TextStyle(fontFamily: 'Poppins'),
               ),
               const SizedBox(height: 16.0),
-
-              // CAMPO PASSWORD
               TextField(
                 controller: _passwordController,
                 obscureText: true,
                 decoration: const InputDecoration(
                   hintText: 'Contraseña',
                   border: UnderlineInputBorder(),
-                  hintStyle: TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Color.fromRGBO(17, 48, 73, 1),
-                  ),
                   enabledBorder: UnderlineInputBorder(
-                    borderSide:
-                        BorderSide(color: Color.fromRGBO(17, 48, 73, 1)),
-                  ),
+                      borderSide:
+                          BorderSide(color: Color.fromRGBO(17, 48, 73, 1))),
                 ),
-                style: const TextStyle(fontFamily: 'Poppins'),
               ),
               const SizedBox(height: 24.0),
-
-              // BOTÓN LOGIN
               Center(
                 child: ElevatedButton(
                   onPressed: _login,
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 100.0, vertical: 16.0),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30.0),
-                    ),
                     backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
                   ),
                   child: const Text('Iniciar sesión',
@@ -288,8 +345,6 @@ class LoginFormScreenState extends State<LoginFormScreen> {
                 ),
               ),
               const SizedBox(height: 16.0),
-
-              // BOTONES SOCIALES
               Center(
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -315,22 +370,16 @@ class LoginFormScreenState extends State<LoginFormScreen> {
                 ),
               ),
               const SizedBox(height: 5.0),
-
-              // BOTÓN RECUPERAR CONTRASEÑA
               Center(
                 child: TextButton(
                   onPressed: _sendPasswordResetEmail,
-                  child: const Text(
-                    'Recuperación de contraseña',
-                    style: TextStyle(
-                      color: Color.fromRGBO(17, 48, 73, 1),
-                      fontFamily: 'Poppins',
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  child: const Text('Recuperación de contraseña',
+                      style: TextStyle(
+                          color: Color.fromRGBO(17, 48, 73, 1),
+                          fontFamily: 'Poppins',
+                          fontWeight: FontWeight.bold)),
                 ),
               ),
-              SizedBox(height: MediaQuery.of(context).size.height * 0.05),
             ],
           ),
         ),

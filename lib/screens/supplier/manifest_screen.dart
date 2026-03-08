@@ -574,23 +574,173 @@ class _PassengerCard extends StatelessWidget {
                       reservationName, data, code, paymentStatus, paymentColor),
             ),
 
-            // --- 3. SWITCH CHECK-IN ---
-            Column(
-              children: [
-                Switch(
-                  value: isCheckedIn,
-                  activeThumbColor: kPrimaryColor,
-                  onChanged: (_) => onToggleCheckIn(),
-                ),
-                Text(
-                  isCheckedIn ? "Presente" : "Ausente",
-                  style: GoogleFonts.poppins(
-                      fontSize: 10,
-                      color: isCheckedIn ? kPrimaryColor : Colors.grey),
-                )
-              ],
-            )
+            // --- 3. SWITCH CHECK-IN + BOTÓN RESPUESTAS ---
+            Builder(builder: (context) {
+              // Extracción robusta de respuestasPreguntas — Firestore SDK puede
+              // devolverlo como Map<String,dynamic>, Map<dynamic,dynamic> o
+              // incluso como null. Convertimos a Map<String,String> siempre.
+              Map<String, String> answers = {};
+              try {
+                final raw = data['respuestasPreguntas'];
+                if (raw is Map && raw.isNotEmpty) {
+                  raw.forEach((k, v) {
+                    if (v != null && v.toString().trim().isNotEmpty) {
+                      answers[k.toString()] = v.toString();
+                    }
+                  });
+                }
+              } catch (_) {}
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Ícono ? — visible siempre que haya al menos una respuesta
+                  if (answers.isNotEmpty)
+                    GestureDetector(
+                      onTap: () => _showAnswersDialog(context, answers),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 2),
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                            color:
+                                kPrimaryColor.withAlpha((0.08 * 255).round()),
+                            shape: BoxShape.circle),
+                        child: const Icon(Icons.help_outline,
+                            color: kPrimaryColor, size: 18),
+                      ),
+                    ),
+                  Switch(
+                    value: isCheckedIn,
+                    activeThumbColor: kPrimaryColor,
+                    onChanged: (_) => onToggleCheckIn(),
+                  ),
+                  Text(
+                    isCheckedIn ? "Presente" : "Ausente",
+                    style: GoogleFonts.poppins(
+                        fontSize: 10,
+                        color: isCheckedIn ? kPrimaryColor : Colors.grey),
+                  )
+                ],
+              );
+            })
           ],
+        ),
+      ),
+    );
+  }
+
+  void _showAnswersDialog(BuildContext context, Map<String, String> answers) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                        color: kPrimaryColor.withAlpha((0.1 * 255).round()),
+                        shape: BoxShape.circle),
+                    child: const Icon(Icons.quiz_outlined,
+                        color: kPrimaryColor, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Respuestas del cliente',
+                            style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: kPrimaryColor)),
+                        Text(
+                            (doc.data() as Map<String, dynamic>)['name']
+                                    ?.toString() ??
+                                '',
+                            style: GoogleFonts.poppins(
+                                fontSize: 12, color: Colors.grey[600])),
+                      ],
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(ctx),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                          color: Colors.grey.shade100, shape: BoxShape.circle),
+                      child: const Icon(Icons.close,
+                          color: Colors.black54, size: 18),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+              const SizedBox(height: 16),
+
+              // Lista de preguntas y respuestas
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.45,
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: answers.entries.map<Widget>((entry) {
+                      final String pregunta = entry.key;
+                      final String respuesta =
+                          entry.value.isNotEmpty ? entry.value : '—';
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: kPrimaryColor.withAlpha((0.04 * 255).round()),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                              color: kPrimaryColor
+                                  .withAlpha((0.12 * 255).round())),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.help_outline,
+                                size: 16, color: kPrimaryColor),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(pregunta,
+                                      style: GoogleFonts.poppins(
+                                          fontSize: 12,
+                                          color: Colors.grey[600],
+                                          fontWeight: FontWeight.w500)),
+                                  const SizedBox(height: 4),
+                                  Text(respuesta,
+                                      style: GoogleFonts.poppins(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black87)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );

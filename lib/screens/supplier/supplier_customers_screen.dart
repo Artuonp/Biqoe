@@ -4,6 +4,20 @@ import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
+// Helper: convierte Timestamp, String ISO o DateTime a DateTime de forma segura.
+// Necesario porque reservas creadas vía REST (Safari web) guardan fechas como String ISO.
+DateTime _parseDate(dynamic value, {DateTime? fallback}) {
+  if (value == null) return fallback ?? DateTime(2000);
+  if (value is DateTime) return value;
+  if (value is Timestamp) return value.toDate();
+  if (value is String && value.isNotEmpty) {
+    try {
+      return DateTime.parse(value);
+    } catch (_) {}
+  }
+  return fallback ?? DateTime(2000);
+}
+
 const Color kPrimaryColor = Color.fromRGBO(17, 48, 73, 1);
 const Color kBackgroundColor = Color(0xFFF8F9FD);
 
@@ -58,7 +72,7 @@ class _SupplierCustomersScreenState extends State<SupplierCustomersScreen> {
 
       DateTime? activityDate;
       if (data['createdAt'] != null) {
-        activityDate = (data['createdAt'] as Timestamp).toDate();
+        activityDate = _parseDate(data['createdAt']);
       }
 
       // 3. AGRUPAR O CREAR

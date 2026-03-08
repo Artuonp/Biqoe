@@ -154,13 +154,15 @@ class _ProvidersListScreenState extends State<ProvidersListScreen> {
                   final name = (data['name'] ?? '').toString().toLowerCase();
                   final search = _searchText.toLowerCase();
 
-                  // NUEVA VALIDACIÓN: Excluir empleados
-                  // Si tiene 'associatedSupplierId' y no está vacío, es empleado -> lo ocultamos
+                  // Excluir empleados
                   final isEmployee = data['associatedSupplierId'] != null &&
                       data['associatedSupplierId'].toString().isNotEmpty;
 
-                  // Mostramos solo si coincide el nombre Y NO es empleado
-                  return name.contains(search) && !isEmployee;
+                  // Excluir proveedores privados (isPrivate == true)
+                  // Si el campo no existe o es false → se muestra
+                  final isPrivate = data['isPrivate'] == true;
+
+                  return name.contains(search) && !isEmployee && !isPrivate;
                 }).toList();
 
                 if (docs.isEmpty) {

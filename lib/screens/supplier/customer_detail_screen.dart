@@ -9,6 +9,20 @@ import 'package:hive_flutter/hive_flutter.dart';
 // --- IMPORT DASHBOARD PARA REUTILIZAR DIALOGO ---
 import '../supplier/dashboard_home_screen.dart';
 
+// Helper: convierte Timestamp, String ISO o DateTime a DateTime de forma segura.
+// Necesario porque reservas creadas vía REST (Safari web) guardan fechas como String ISO.
+DateTime _parseDate(dynamic value, {DateTime? fallback}) {
+  if (value == null) return fallback ?? DateTime(2000);
+  if (value is DateTime) return value;
+  if (value is Timestamp) return value.toDate();
+  if (value is String && value.isNotEmpty) {
+    try {
+      return DateTime.parse(value);
+    } catch (_) {}
+  }
+  return fallback ?? DateTime(2000);
+}
+
 const Color kPrimaryColor = Color.fromRGBO(17, 48, 73, 1);
 const Color kBackgroundColor = Color(0xFFF8F9FD);
 
@@ -728,8 +742,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                                         : 'Pendiente';
                                 DateTime date = DateTime(2000);
                                 if (data['createdAt'] != null) {
-                                  date =
-                                      (data['createdAt'] as Timestamp).toDate();
+                                  date = _parseDate(data['createdAt']);
                                 }
                                 final String dateStr =
                                     DateFormat('dd/MM/yyyy').format(date);

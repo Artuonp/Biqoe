@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -14,6 +15,20 @@ import 'activity_history_screen.dart';
 import '../chat_list_screen.dart';
 import '../chat_detail_screen.dart';
 import 'supplier_verify_payments_screen.dart'; // Ya lo tenías, pero confirmamos su uso principal
+
+// Helper: convierte Timestamp, String ISO o DateTime a DateTime de forma segura.
+// Necesario porque reservas creadas vía REST (Safari web) guardan fechas como String ISO.
+DateTime _parseDate(dynamic value, {DateTime? fallback}) {
+  if (value == null) return fallback ?? DateTime(2000);
+  if (value is DateTime) return value;
+  if (value is Timestamp) return value.toDate();
+  if (value is String && value.isNotEmpty) {
+    try {
+      return DateTime.parse(value);
+    } catch (_) {}
+  }
+  return fallback ?? DateTime(2000);
+}
 
 const Color kPrimaryColor = Color.fromRGBO(17, 48, 73, 1);
 const Color kBackgroundColor = Color(0xFFF8F9FD);
@@ -39,6 +54,7 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
   StreamSubscription? _chatsSub;
 
   // Variables para el Badge Persistente
+  // ignore: unused_field
   int _unreadCount = 0;
   DateTime _lastBadgeDismissTime = DateTime(2000);
   Box? _prefsBox;
@@ -113,8 +129,7 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
             'type': 'booking',
             'id': bookingEventId, // ID único para el dismissible
             'docId': doc.id,
-            'date':
-                (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime(2000),
+            'date': _parseDate(data['createdAt'], fallback: DateTime(2000)),
             'data': data,
             'isHidden': false,
           });
@@ -138,7 +153,7 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
                   'type': 'payment_event',
                   'id': paymentEventId,
                   'docId': doc.id,
-                  'date': (p['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
+                  'date': _parseDate(p['date'], fallback: DateTime.now()),
                   'data': {
                     ...data,
                     'specificAmount': p['amount'],
@@ -160,8 +175,8 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
         final data = doc.data() as Map<String, dynamic>;
         if (data['readBySupplier'] == false) {
           currentUnread++;
-          final msgDate = (data['lastMessageTime'] as Timestamp?)?.toDate() ??
-              DateTime(2000);
+          final msgDate =
+              _parseDate(data['lastMessageTime'], fallback: DateTime(2000));
           if (msgDate.isAfter(newestUnreadDate)) newestUnreadDate = msgDate;
         }
 
@@ -171,8 +186,7 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
           'type': 'message',
           'id': doc.id,
           'docId': doc.id,
-          'date': (data['lastMessageTime'] as Timestamp?)?.toDate() ??
-              DateTime(2000),
+          'date': _parseDate(data['lastMessageTime'], fallback: DateTime(2000)),
           'data': data,
           'isHidden': false,
         });
@@ -315,7 +329,7 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded,
               color: kPrimaryColor),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => context.go('/settings'),
         ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -333,49 +347,21 @@ class _DashboardHomeScreenState extends State<DashboardHomeScreen> {
           ],
         ),
         actions: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Container(
-                margin: const EdgeInsets.only(right: 16, top: 5),
-                decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                          color: Colors.black.withAlpha((0.01 * 255).round()),
-                          blurRadius: 2)
-                    ]),
-                child: IconButton(
-                  icon: const Icon(HugeIcons.strokeRoundedMessage01,
-                      color: kPrimaryColor, size: 22),
-                  onPressed: _onMessageIconTap,
-                ),
-              ),
-              if (_unreadCount > 0)
-                Positioned(
-                  right: 12,
-                  top: 5,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: kBackgroundColor, width: 2),
-                    ),
-                    constraints:
-                        const BoxConstraints(minWidth: 18, minHeight: 18),
-                    child: Text(
-                      '$_unreadCount',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
+          Container(
+            margin: const EdgeInsets.only(right: 16, top: 5),
+            decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.black.withAlpha((0.01 * 255).round()),
+                      blurRadius: 2)
+                ]),
+            child: IconButton(
+              icon: const Icon(HugeIcons.strokeRoundedMessage01,
+                  color: kPrimaryColor, size: 22),
+              onPressed: _onMessageIconTap,
+            ),
           ),
         ],
       ),
@@ -626,8 +612,7 @@ class _ActivityItem extends StatelessWidget {
 
     // --- 1. CASO MENSAJE ---
     if (itemType == 'message') {
-      itemDate =
-          (data['lastMessageTime'] as Timestamp?)?.toDate() ?? DateTime.now();
+      itemDate = _parseDate(data['lastMessageTime'], fallback: DateTime.now());
       isRead = true; // Mensajes visualmente siempre blancos en la lista
 
       activityTitle = data['userName'] ?? 'Usuario';
@@ -641,10 +626,9 @@ class _ActivityItem extends StatelessWidget {
       // Intentamos usar la fecha específica del pago si fue inyectada por el stream
       // Si no, usamos createdAt como respaldo.
       if (data['displayDate'] != null && data['displayDate'] is Timestamp) {
-        itemDate = (data['displayDate'] as Timestamp).toDate();
+        itemDate = _parseDate(data['displayDate']);
       } else {
-        itemDate =
-            (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+        itemDate = _parseDate(data['createdAt'], fallback: DateTime.now());
       }
 
       isRead = data['read'] ?? false;
@@ -668,7 +652,7 @@ class _ActivityItem extends StatelessWidget {
     }
     // --- 3. CASO RESERVA GENERAL (Creación) ---
     else {
-      itemDate = (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+      itemDate = _parseDate(data['createdAt'], fallback: DateTime.now());
       isRead = data['read'] ?? false;
 
       final String status = data['estado'] ?? 'pendiente';
@@ -1226,7 +1210,7 @@ class _PaymentCard extends StatelessWidget {
     // Fecha
     DateTime? date;
     if (paymentData['date'] != null) {
-      date = (paymentData['date'] as Timestamp).toDate();
+      date = _parseDate(paymentData['date']);
     }
     final dateStr =
         date != null ? DateFormat('dd/MM/yyyy').format(date) : '--/--/----';
