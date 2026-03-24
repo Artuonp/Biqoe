@@ -6,6 +6,7 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:firebase_messaging/firebase_messaging.dart'; // 🔥 IMPORTANTE PARA ACTUALIZAR TOKEN
 
 class LoginFormScreen extends StatefulWidget {
   const LoginFormScreen({super.key});
@@ -21,14 +22,9 @@ class LoginFormScreenState extends State<LoginFormScreen> {
   FirebaseAuth get _auth => FirebaseAuth.instance;
 
   // ── Persistencia segura para web ────────────────────────────────────────
-  // IMPORTANTE: Esta función NO debe llamarse antes de signInWithPopup en web.
-  // El popup de OAuth necesita cookies/session para funcionar; llamar
-  // setPersistence(NONE) antes lo rompe. Solo la llamamos para email/password.
   Future<void> _setSafePersistenceForEmailLogin() async {
     if (kIsWeb) {
       try {
-        // SESSION es más compatible en web que NONE — funciona aunque Safari
-        // bloquee IndexedDB, y no interfiere con el flujo de popups OAuth.
         await _auth.setPersistence(Persistence.SESSION);
         debugPrint('[Auth] Persistencia web: SESSION');
       } catch (e) {
@@ -37,7 +33,7 @@ class LoginFormScreenState extends State<LoginFormScreen> {
     }
   }
 
-  // ── Helper: consulta isSupplier → navega al destino correcto ────────────
+  // ── Helper: consulta isSupplier, actualiza Token → navega al destino ────
   Future<void> _navigateAfterLogin(String userId) async {
     debugPrint('[Auth] _navigateAfterLogin uid=$userId');
     try {
@@ -45,18 +41,39 @@ class LoginFormScreenState extends State<LoginFormScreen> {
           .collection('usuarios')
           .doc(userId)
           .get();
+
       if (!mounted) return;
       if (!userDoc.exists) {
         debugPrint(
             '[Auth] Usuario no encontrado en Firestore, cerrando sesión');
         await _auth.signOut();
-        _showErrorMessage('La cuenta no está registrada.');
+        _showErrorMessage(
+            'La cuenta no está registrada. Por favor regístrate primero.');
         return;
       }
-      final bool isSupplier = userDoc.data()?['isSupplier'] == true;
-      debugPrint(
-          '[Auth] isSupplier=$isSupplier → navegando a ${isSupplier ? '/supplier/dashboard' : '/'}');
+
+      // 🔥 FIX: Actualizar el Device Token de forma segura (sin bloquear el login)
+      try {
+        String? deviceToken;
+        if (!kIsWeb) {
+          deviceToken = await FirebaseMessaging.instance
+              .getToken()
+              .timeout(const Duration(seconds: 4));
+        }
+        if (deviceToken != null && deviceToken.isNotEmpty) {
+          // Lo actualizamos en segundo plano
+          FirebaseFirestore.instance.collection('usuarios').doc(userId).update({
+            'deviceToken': deviceToken,
+          }).catchError((_) {});
+        }
+      } catch (e) {
+        debugPrint(
+            "Advertencia: Fallo al actualizar device token en login: $e");
+      }
+
       if (!mounted) return;
+      final bool isSupplier = userDoc.data()?['isSupplier'] == true;
+      debugPrint('[Auth] isSupplier=$isSupplier → navegando');
       context.go(isSupplier ? '/supplier/dashboard' : '/');
     } catch (e, stack) {
       debugPrint('[Auth] Error en _navigateAfterLogin: $e\n$stack');
@@ -119,7 +136,7 @@ class LoginFormScreenState extends State<LoginFormScreen> {
     final email = _emailController.text.trim();
     if (email.isEmpty) {
       _showErrorMessage(
-          'Escribe tu correo en el campo de arriba para recuperarla.');
+          'Escribe tu correo en el campo de arriba para recuperar la contraseña.');
       return;
     }
     try {
@@ -136,19 +153,11 @@ class LoginFormScreenState extends State<LoginFormScreen> {
       UserCredential userCredential;
 
       if (kIsWeb) {
-        // ── WEB ─────────────────────────────────────────────────────────────
-        // NO llamar _setSafePersistence antes del popup — interfiere con OAuth.
-        // signInWithPopup abre el diálogo de cuentas de Google de Firebase,
-        // que los navegadores sí permiten (a diferencia de GoogleSignIn().signIn()
-        // que abre una ventana del SO bloqueada como popup no autorizado).
         debugPrint('[Auth] Web: usando signInWithPopup(GoogleAuthProvider)');
         final provider = GoogleAuthProvider();
         provider.addScope('email');
         userCredential = await _auth.signInWithPopup(provider);
-        debugPrint(
-            '[Auth] signInWithPopup completado. user=${userCredential.user?.email}');
       } else {
-        // ── MÓVIL ────────────────────────────────────────────────────────────
         debugPrint('[Auth] Móvil: usando GoogleSignIn nativo');
         final credential = await _googleSignInNative();
         if (credential == null) {
@@ -156,8 +165,6 @@ class LoginFormScreenState extends State<LoginFormScreen> {
           return;
         }
         userCredential = await _auth.signInWithCredential(credential);
-        debugPrint(
-            '[Auth] Credential nativo OK uid=${userCredential.user?.uid}');
       }
 
       if (!mounted) return;
@@ -182,7 +189,6 @@ class LoginFormScreenState extends State<LoginFormScreen> {
 
   Future<AuthCredential?> _googleSignInNative() async {
     try {
-      // ignore: depend_on_referenced_packages
       final GoogleSignIn googleSignIn = GoogleSignIn();
       await googleSignIn.signOut();
       final googleUser = await googleSignIn.signIn();
@@ -205,20 +211,13 @@ class LoginFormScreenState extends State<LoginFormScreen> {
       UserCredential userCredential;
 
       if (kIsWeb) {
-        // ── WEB ─────────────────────────────────────────────────────────────
-        // OAuthProvider('apple.com') + signInWithPopup es el método correcto.
-        // SignInWithApple.getAppleIDCredential() no funciona en web — abre una
-        // ventana del SO que el browser bloquea.
         debugPrint(
             '[Auth] Web: usando signInWithPopup(OAuthProvider apple.com)');
         final provider = OAuthProvider('apple.com');
         provider.addScope('email');
         provider.addScope('name');
         userCredential = await _auth.signInWithPopup(provider);
-        debugPrint(
-            '[Auth] Apple popup completado. user=${userCredential.user?.email}');
       } else {
-        // ── MÓVIL ────────────────────────────────────────────────────────────
         debugPrint('[Auth] Móvil: usando SignInWithApple nativo');
         final appleCredential = await SignInWithApple.getAppleIDCredential(
           scopes: [
@@ -237,7 +236,6 @@ class LoginFormScreenState extends State<LoginFormScreen> {
           accessToken: appleCredential.authorizationCode,
         );
         userCredential = await _auth.signInWithCredential(credential);
-        debugPrint('[Auth] Apple nativo OK uid=${userCredential.user?.uid}');
       }
 
       if (!mounted) return;
@@ -266,6 +264,9 @@ class LoginFormScreenState extends State<LoginFormScreen> {
         content: Text(message, style: const TextStyle(fontFamily: 'Poppins')),
         backgroundColor: Colors.red,
         behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16.0),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
       ),
     );
   }

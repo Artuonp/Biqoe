@@ -128,7 +128,6 @@ class RegisterScreenState extends State<RegisterScreen> {
     }
 
     // CORRECCIÓN PARA WEB: Validar teléfono si NO es App Nativa de iOS
-    // (En web siempre validamos, en Android también)
     bool isNativeIOS = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
     if (!isNativeIOS && !isValidPhone(phone)) {
@@ -168,21 +167,32 @@ class RegisterScreenState extends State<RegisterScreen> {
         password: password,
       );
 
-      // Establecer el idioma del correo de verificación
-      await FirebaseAuth.instance.setLanguageCode('es');
-
-      // Enviar correo de verificación
-      if (userCredential.user != null && !userCredential.user!.emailVerified) {
-        await userCredential.user!.sendEmailVerification();
-      }
-
-      // Obtener el UID del usuario
       String uid = userCredential.user!.uid;
 
-      // Obtener el token del dispositivo
-      String? deviceToken = await FirebaseMessaging.instance.getToken();
+      // 🔥 FIX 1: Enviar correo de verificación BLINDADO
+      try {
+        await FirebaseAuth.instance.setLanguageCode('es');
+        if (userCredential.user != null &&
+            !userCredential.user!.emailVerified) {
+          await userCredential.user!.sendEmailVerification();
+        }
+      } catch (e) {
+        debugPrint("Advertencia: No se pudo enviar correo de verificación: $e");
+      }
 
-      // Agregar el usuario a la colección de Firestore
+      // 🔥 FIX 2: Obtener el token del dispositivo BLINDADO
+      String? deviceToken;
+      try {
+        if (!kIsWeb) {
+          deviceToken = await FirebaseMessaging.instance
+              .getToken()
+              .timeout(const Duration(seconds: 4));
+        }
+      } catch (e) {
+        debugPrint("Advertencia: Fallo al obtener device token: $e");
+      }
+
+      // 🔥 FIX 3: Agregar el usuario a la colección de Firestore (Asegurado)
       await FirebaseFirestore.instance.collection('usuarios').doc(uid).set({
         'name': name,
         'isAdmin': false,
@@ -190,13 +200,12 @@ class RegisterScreenState extends State<RegisterScreen> {
         'email': email,
         'verified': false,
         'celular': phone,
-        'deviceToken': deviceToken,
+        'deviceToken': deviceToken ?? '',
       });
 
       if (!mounted) return;
 
       context.go('/login');
-
       _showSuccessMessage(
           'Registro exitoso. Por favor, verifica tu correo electrónico.');
     } on FirebaseAuthException catch (e) {
@@ -243,7 +252,6 @@ class RegisterScreenState extends State<RegisterScreen> {
       String email;
 
       if (kIsWeb) {
-        // NO llamar setPersistence antes del popup — interfiere con OAuth
         debugPrint('[Auth][Register] Web: signInWithPopup Google');
         final provider = GoogleAuthProvider();
         provider.addScope('email');
@@ -275,15 +283,25 @@ class RegisterScreenState extends State<RegisterScreen> {
       }
 
       if (!mounted) return;
-
       String uid = userCredential.user!.uid;
-      String? deviceToken =
-          kIsWeb ? null : await FirebaseMessaging.instance.getToken();
+
+      // 🔥 FIX: Blindaje del token
+      String? deviceToken;
+      try {
+        if (!kIsWeb) {
+          deviceToken = await FirebaseMessaging.instance
+              .getToken()
+              .timeout(const Duration(seconds: 4));
+        }
+      } catch (e) {
+        debugPrint("Advertencia Token FCM Google: $e");
+      }
 
       final existing = await FirebaseFirestore.instance
           .collection('usuarios')
           .doc(uid)
           .get();
+
       if (!existing.exists) {
         debugPrint('[Auth][Register] Creando doc Firestore uid=$uid');
         await FirebaseFirestore.instance.collection('usuarios').doc(uid).set({
@@ -325,7 +343,6 @@ class RegisterScreenState extends State<RegisterScreen> {
       UserCredential userCredential;
 
       if (kIsWeb) {
-        // NO llamar setPersistence antes del popup — interfiere con OAuth
         debugPrint('[Auth][Register] Web: signInWithPopup Apple');
         final provider = OAuthProvider('apple.com');
         provider.addScope('email');
@@ -367,13 +384,24 @@ class RegisterScreenState extends State<RegisterScreen> {
       }
 
       String uid = userCredential.user!.uid;
-      String? deviceToken =
-          kIsWeb ? null : await FirebaseMessaging.instance.getToken();
+
+      // 🔥 FIX: Blindaje del token
+      String? deviceToken;
+      try {
+        if (!kIsWeb) {
+          deviceToken = await FirebaseMessaging.instance
+              .getToken()
+              .timeout(const Duration(seconds: 4));
+        }
+      } catch (e) {
+        debugPrint("Advertencia Token FCM Apple: $e");
+      }
 
       final existing = await FirebaseFirestore.instance
           .collection('usuarios')
           .doc(uid)
           .get();
+
       if (!existing.exists) {
         debugPrint('[Auth][Register] Creando doc Apple uid=$uid');
         await FirebaseFirestore.instance.collection('usuarios').doc(uid).set({
