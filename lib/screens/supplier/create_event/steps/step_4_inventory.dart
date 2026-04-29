@@ -30,12 +30,23 @@ class Step4Inventory extends StatefulWidget {
 class _Step4InventoryState extends State<Step4Inventory> {
   List<Map<String, dynamic>> _packages = [];
 
+  // 'usd' o 'eur' — divisa seleccionada para todos los paquetes del destino
+  String _divisa = 'usd';
+
+  // Devuelve el símbolo según la divisa seleccionada
+  String get _currencySymbol => _divisa == 'eur' ? '€' : '\$';
+
   @override
   void initState() {
     super.initState();
     if (widget.initialData['paquetes'] != null) {
       _packages =
           List<Map<String, dynamic>>.from(widget.initialData['paquetes']);
+    }
+    // Cargamos la divisa si ya existe (modo edición)
+    final savedDivisa = widget.initialData['divisa']?.toString();
+    if (savedDivisa == 'eur' || savedDivisa == 'usd') {
+      _divisa = savedDivisa!;
     }
   }
 
@@ -54,6 +65,7 @@ class _Step4InventoryState extends State<Step4Inventory> {
           child: _PackageForm(
             mainEventName: widget.initialData['nombre'] ?? 'Evento',
             initialPackage: existingPackage,
+            divisa: _divisa,
             onSave: (packageData) {
               setState(() {
                 if (index != null) {
@@ -83,7 +95,7 @@ class _Step4InventoryState extends State<Step4Inventory> {
       );
       return;
     }
-    widget.onNext({'paquetes': _packages});
+    widget.onNext({'paquetes': _packages, 'divisa': _divisa});
   }
 
   @override
@@ -104,7 +116,66 @@ class _Step4InventoryState extends State<Step4Inventory> {
             "Configura los paquetes disponibles para: ${widget.initialData['nombre'] ?? 'Tu evento'}",
             style: GoogleFonts.poppins(color: Colors.grey),
           ),
-          const SizedBox(height: 25),
+          const SizedBox(height: 20),
+
+          // ── SELECTOR DE DIVISA ──────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.grey.shade200),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3))
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.currency_exchange,
+                        color: kPrimaryColor, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Divisa de los precios',
+                      style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: kPrimaryColor),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Elige la moneda con la que se mostrarán todos los precios de esta actividad.',
+                  style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    _DivisaOption(
+                      label: 'Dólar (USD)',
+                      symbol: '\$',
+                      isSelected: _divisa == 'usd',
+                      onTap: () => setState(() => _divisa = 'usd'),
+                    ),
+                    const SizedBox(width: 12),
+                    _DivisaOption(
+                      label: 'Euro (EUR)',
+                      symbol: '€',
+                      isSelected: _divisa == 'eur',
+                      onTap: () => setState(() => _divisa = 'eur'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
           if (_packages.isEmpty)
             _buildEmptyState()
           else
@@ -159,7 +230,7 @@ class _Step4InventoryState extends State<Step4Inventory> {
                         backgroundColor: kPrimaryColor.withValues(alpha: 0.1),
                         child: Icon(icon, color: kPrimaryColor, size: 22),
                       ),
-                      title: Text("\$${pkg['precio']}",
+                      title: Text("$_currencySymbol${pkg['precio']}",
                           style: GoogleFonts.poppins(
                               fontWeight: FontWeight.bold,
                               fontSize: 18,
@@ -286,11 +357,13 @@ class _PackageForm extends StatefulWidget {
   final Function(Map<String, dynamic>) onSave;
   final String mainEventName;
   final Map<String, dynamic>? initialPackage;
+  final String divisa; // 'usd' o 'eur'
 
   const _PackageForm({
     required this.onSave,
     required this.mainEventName,
     this.initialPackage,
+    this.divisa = 'usd',
   });
 
   @override
@@ -580,8 +653,12 @@ class _PackageFormState extends State<_PackageForm> {
                 controller: _priceController,
                 keyboardType: TextInputType.numberWithOptions(decimal: true),
                 decoration: _inputDeco(
-                    label: "Precio total (en dólares)",
-                    icon: Icons.attach_money),
+                    label: widget.divisa == 'eur'
+                        ? "Precio total (en euros)"
+                        : "Precio total (en dólares)",
+                    icon: widget.divisa == 'eur'
+                        ? Icons.euro
+                        : Icons.attach_money),
                 validator: (v) => v!.isEmpty ? "Requerido" : null,
                 onChanged: (val) => setState(
                     () {}), // Actualizar vista para recálculo de cuotas
@@ -693,7 +770,8 @@ class _PackageFormState extends State<_PackageForm> {
                               const SizedBox(width: 10),
                               SizedBox(
                                 width: 80,
-                                child: Text("\$${amount.toStringAsFixed(2)}",
+                                child: Text(
+                                    "${widget.divisa == 'eur' ? '€' : '\$'}${amount.toStringAsFixed(2)}",
                                     textAlign: TextAlign.end,
                                     style: GoogleFonts.poppins(
                                         fontSize: 13,
@@ -1341,6 +1419,66 @@ class _DateGeneratorDialogState extends State<_DateGeneratorDialog>
         _selectedWeekdays.add(day);
       }
     });
+  }
+}
+
+// ── Widget selector de divisa ─────────────────────────────────────────────────
+class _DivisaOption extends StatelessWidget {
+  final String label;
+  final String symbol;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _DivisaOption({
+    required this.label,
+    required this.symbol,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+          decoration: BoxDecoration(
+              color: isSelected ? kPrimaryColor : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                  color: isSelected ? kPrimaryColor : Colors.grey.shade300,
+                  width: isSelected ? 2 : 1),
+              boxShadow: isSelected
+                  ? [
+                      BoxShadow(
+                          color: kPrimaryColor.withValues(alpha: 0.2),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4))
+                    ]
+                  : []),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                symbol,
+                style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: isSelected ? Colors.white : Colors.grey[600]),
+              ),
+              const SizedBox(width: 8),
+              Text(label,
+                  style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isSelected ? Colors.white : Colors.grey[700])),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

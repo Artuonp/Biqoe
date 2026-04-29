@@ -977,32 +977,38 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
             ),
             body: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
-              child: Column(
-                children: [
-                  _buildProviderHeader(screenWidth, userData, realProviderId),
-                  const SizedBox(height: 20),
-                  _buildProviderActivities(screenWidth, realProviderId),
-                  const SizedBox(height: 50),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 40),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text("Experiencia facilitada por ",
-                            style: TextStyle(
-                                color: Colors.grey[400],
-                                fontFamily: 'Poppins',
-                                fontSize: 12)),
-                        const Text("Biqoe",
-                            style: TextStyle(
-                                color: Color.fromRGBO(17, 48, 73, 1),
-                                fontFamily: 'Poppins',
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13)),
-                      ],
-                    ),
-                  )
-                ],
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
+                  child: Column(
+                    children: [
+                      _buildProviderHeader(
+                          screenWidth, userData, realProviderId),
+                      const SizedBox(height: 20),
+                      _buildProviderActivities(screenWidth, realProviderId),
+                      const SizedBox(height: 50),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 40),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text("Experiencia facilitada por ",
+                                style: TextStyle(
+                                    color: Colors.grey[400],
+                                    fontFamily: 'Poppins',
+                                    fontSize: 12)),
+                            const Text("Biqoe",
+                                style: TextStyle(
+                                    color: Color.fromRGBO(17, 48, 73, 1),
+                                    fontFamily: 'Poppins',
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13)),
+                          ],
+                        ),
+                      )
+                    ],
+                  ),
+                ),
               ),
             ),
           );
@@ -1255,86 +1261,184 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
                   );
                 }
 
-                return ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: activities.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(height: 20),
-                  itemBuilder: (context, index) {
-                    try {
-                      final data = activities[index];
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    // En pantallas grandes usamos 2 columnas; en móvil, 1
+                    final bool useGrid = constraints.maxWidth > 500;
+                    if (useGrid) {
+                      return GridView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                          childAspectRatio: 1.1,
+                        ),
+                        itemCount: activities.length,
+                        itemBuilder: (context, index) {
+                          try {
+                            final data = activities[index];
+                            double minPrice = 0.0;
+                            final rawPaquetes = data['paquetes'];
+                            if (rawPaquetes is List) {
+                              List<double> precios = [];
+                              for (var p in rawPaquetes) {
+                                if (p is Map && p['precio'] != null) {
+                                  var val = p['precio'];
+                                  if (val is num) {
+                                    precios.add(val.toDouble());
+                                  } else if (val is String) {
+                                    precios.add(double.tryParse(val) ?? 0.0);
+                                  }
+                                }
+                              }
+                              if (precios.isNotEmpty) {
+                                minPrice =
+                                    precios.reduce((a, b) => a < b ? a : b);
+                              }
+                            }
+                            String displayImage = '';
+                            final rawImagenes = data['imagenes'];
+                            final rawImagen = data['imagen'];
+                            if (rawImagenes is List && rawImagenes.isNotEmpty) {
+                              displayImage = rawImagenes[0].toString();
+                            } else if (rawImagen is String) {
+                              displayImage = rawImagen;
+                            } else if (rawImagen is List &&
+                                rawImagen.isNotEmpty) {
+                              displayImage = rawImagen[0].toString();
+                            }
+                            return GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        DestinationDetailScreen(
+                                      destinationId: data['id'] ?? '',
+                                      userId: widget.currentUserId,
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: ProviderActivityCard(
+                                imageUrl: displayImage,
+                                title: data['nombre']?.toString() ??
+                                    'Actividad sin nombre',
+                                location: data['lugar']?.toString() ??
+                                    (data['estado']?.toString() ?? ''),
+                                price: minPrice,
+                                currencySymbol:
+                                    data['divisa']?.toString() == 'eur'
+                                        ? '€'
+                                        : '\$',
+                              ),
+                            );
+                          } catch (e) {
+                            return Container(
+                              height: 100,
+                              color: Colors.red.shade100,
+                              child: Center(
+                                child: Text('Error: $e',
+                                    style: const TextStyle(color: Colors.red)),
+                              ),
+                            );
+                          }
+                        },
+                      );
+                    }
+                    // Mobile: lista vertical original
+                    return ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: activities.length,
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 20),
+                      itemBuilder: (context, index) {
+                        try {
+                          final data = activities[index];
 
-                      // Calcular precio mínimo desde paquetes
-                      double minPrice = 0.0;
-                      final rawPaquetes = data['paquetes'];
-                      if (rawPaquetes is List) {
-                        List<double> precios = [];
-                        for (var p in rawPaquetes) {
-                          if (p is Map && p['precio'] != null) {
-                            var val = p['precio'];
-                            if (val is num) {
-                              precios.add(val.toDouble());
-                            } else if (val is String) {
-                              precios.add(double.tryParse(val) ?? 0.0);
+                          // Calcular precio mínimo desde paquetes
+                          double minPrice = 0.0;
+                          final rawPaquetes = data['paquetes'];
+                          if (rawPaquetes is List) {
+                            List<double> precios = [];
+                            for (var p in rawPaquetes) {
+                              if (p is Map && p['precio'] != null) {
+                                var val = p['precio'];
+                                if (val is num) {
+                                  precios.add(val.toDouble());
+                                } else if (val is String) {
+                                  precios.add(double.tryParse(val) ?? 0.0);
+                                }
+                              }
+                            }
+                            if (precios.isNotEmpty) {
+                              minPrice =
+                                  precios.reduce((a, b) => a < b ? a : b);
                             }
                           }
-                        }
-                        if (precios.isNotEmpty) {
-                          minPrice = precios.reduce((a, b) => a < b ? a : b);
-                        }
-                      }
 
-                      // Obtener imagen de portada
-                      String displayImage = '';
-                      final rawImagenes = data['imagenes'];
-                      final rawImagen = data['imagen'];
+                          // Obtener imagen de portada
+                          String displayImage = '';
+                          final rawImagenes = data['imagenes'];
+                          final rawImagen = data['imagen'];
 
-                      if (rawImagenes is List && rawImagenes.isNotEmpty) {
-                        displayImage = rawImagenes[0].toString();
-                      } else if (rawImagen is String) {
-                        displayImage = rawImagen;
-                      } else if (rawImagen is List && rawImagen.isNotEmpty) {
-                        displayImage = rawImagen[0].toString();
-                      }
+                          if (rawImagenes is List && rawImagenes.isNotEmpty) {
+                            displayImage = rawImagenes[0].toString();
+                          } else if (rawImagen is String) {
+                            displayImage = rawImagen;
+                          } else if (rawImagen is List &&
+                              rawImagen.isNotEmpty) {
+                            displayImage = rawImagen[0].toString();
+                          }
 
-                      return GestureDetector(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => DestinationDetailScreen(
-                                destinationId:
-                                    data['id'] ?? '', // Pasamos solo el ID
-                                userId: widget.currentUserId,
+                          return GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => DestinationDetailScreen(
+                                    destinationId:
+                                        data['id'] ?? '', // Pasamos solo el ID
+                                    userId: widget.currentUserId,
+                                  ),
+                                ),
+                              );
+                            },
+                            child: ProviderActivityCard(
+                              imageUrl: displayImage,
+                              title: data['nombre']?.toString() ??
+                                  'Actividad sin nombre',
+                              location: data['lugar']?.toString() ??
+                                  (data['estado']?.toString() ?? ''),
+                              price: minPrice,
+                              currencySymbol:
+                                  data['divisa']?.toString() == 'eur'
+                                      ? '€'
+                                      : '\$',
+                            ),
+                          );
+                        } catch (e, stack) {
+                          debugPrint('ERROR EN ITEM BUILDER: $e\n$stack');
+                          return Container(
+                            height: 100,
+                            color: Colors.red.shade100,
+                            child: Center(
+                              child: Text(
+                                'Error al mostrar actividad: $e',
+                                style: const TextStyle(color: Colors.red),
                               ),
                             ),
                           );
-                        },
-                        child: ProviderActivityCard(
-                          imageUrl: displayImage,
-                          title: data['nombre']?.toString() ??
-                              'Actividad sin nombre',
-                          location: data['lugar']?.toString() ??
-                              (data['estado']?.toString() ?? ''),
-                          price: minPrice,
-                        ),
-                      );
-                    } catch (e, stack) {
-                      debugPrint('ERROR EN ITEM BUILDER: $e\n$stack');
-                      return Container(
-                        height: 100,
-                        color: Colors.red.shade100,
-                        child: Center(
-                          child: Text(
-                            'Error al mostrar actividad: $e',
-                            style: const TextStyle(color: Colors.red),
-                          ),
-                        ),
-                      );
-                    }
-                  },
+                        }
+                      },
+                    );
+                  }, // end LayoutBuilder
                 );
               } catch (e, stack) {
                 debugPrint('ERROR EN FUTUREBUILDER DE ACTIVIDADES: $e\n$stack');
@@ -1361,13 +1465,16 @@ class ProviderActivityCard extends StatelessWidget {
   final String title;
   final String location;
   final double price;
+  // Símbolo de moneda: '$' para USD (por defecto) o '€' para EUR
+  final String currencySymbol;
 
   const ProviderActivityCard(
       {super.key,
       required this.imageUrl,
       required this.title,
       required this.location,
-      required this.price});
+      required this.price,
+      this.currencySymbol = '\$'});
 
   @override
   Widget build(BuildContext context) {
@@ -1456,7 +1563,7 @@ class ProviderActivityCard extends StatelessWidget {
                       decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(10)),
-                      child: Text('\$${price.toStringAsFixed(0)}',
+                      child: Text('$currencySymbol${price.toStringAsFixed(0)}',
                           style: const TextStyle(
                               color: Color.fromRGBO(17, 48, 73, 1),
                               fontWeight: FontWeight.w800,

@@ -1,11 +1,8 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:path_provider/path_provider.dart';
 
 const Color kPrimaryColor = Color.fromRGBO(17, 48, 73, 1);
 
@@ -29,10 +26,8 @@ class _Step2MultimediaState extends State<Step2Multimedia> {
   bool _isUploading = false;
 
   // --- CONFIGURACIÓN DE CLOUDINARY ---
-  // IMPORTANTE: Cambia esto por tus credenciales reales
-  final String _cloudName = "dnczaifnx";
-  final String _uploadPreset =
-      "ml_default"; // Debe ser 'unsigned' en Cloudinary
+  final String _cloudName = "dovz4vf2e";
+  final String _uploadPreset = "ml_default";
 
   @override
   void initState() {
@@ -42,89 +37,93 @@ class _Step2MultimediaState extends State<Step2Multimedia> {
     }
   }
 
-  // 1. Seleccionar y Comprimir
+  // 1. Seleccionar y Subir
   Future<void> _pickAndUploadImage(ImageSource source) async {
     try {
-      final XFile? pickedFile = await _picker.pickImage(source: source);
+      // Usamos el compresor nativo del ImagePicker
+      final XFile? pickedFile = await _picker.pickImage(
+        source: source,
+        imageQuality: 80, // Calidad 80% para ahorrar espacio
+        maxWidth: 1280, // Redimensionar a HD
+        maxHeight: 1280,
+      );
+
       if (pickedFile == null) return;
 
       setState(() => _isUploading = true);
 
-      // --- COMPRESIÓN AUTOMÁTICA ---
-      final File originalFile = File(pickedFile.path);
-      final File? compressedFile = await _compressImage(originalFile);
+      // Leemos la imagen como Bytes (memoria)
+      final bytes = await pickedFile.readAsBytes();
 
-      if (compressedFile != null) {
-        // Subir a Cloudinary
-        String? url = await _uploadToCloudinary(compressedFile);
-        if (url != null) {
-          setState(() {
-            _uploadedImageUrls.add(url);
-          });
-        }
+      // Subir a Cloudinary
+      String? url = await _uploadToCloudinary(bytes);
+
+      if (url != null) {
+        setState(() {
+          _uploadedImageUrls.add(url);
+        });
       }
     } catch (e) {
-      _showError("Error al procesar la imagen: $e");
+      debugPrint("Error interno al seleccionar imagen: $e");
+      _showMaintenanceError();
     } finally {
-      setState(() => _isUploading = false);
+      if (mounted) setState(() => _isUploading = false);
     }
   }
 
-  // Lógica de Compresión (Reduce tamaño drásticamente)
-  Future<File?> _compressImage(File file) async {
-    final dir = await getTemporaryDirectory();
-    final targetPath =
-        "${dir.absolute.path}/temp_${DateTime.now().millisecondsSinceEpoch}.jpg";
-
-    var result = await FlutterImageCompress.compressAndGetFile(
-      file.absolute.path,
-      targetPath,
-      quality:
-          80, // Calidad 80% (Casi imperceptible la baja, pero ahorra mucho espacio)
-      minWidth: 1280, // Redimensionar a HD (Suficiente para móviles)
-      minHeight: 1280,
-    );
-
-    return result != null ? File(result.path) : null;
-  }
-
-  // Lógica de Subida a Cloudinary
-  Future<String?> _uploadToCloudinary(File imageFile) async {
+  // 🔥 FIX DEFINITIVO: Subida a Cloudinary usando Base64 (A prueba de Web/CORS)
+  Future<String?> _uploadToCloudinary(List<int> imageBytes) async {
     try {
       final url =
           Uri.parse('https://api.cloudinary.com/v1_1/$_cloudName/image/upload');
-      final request = http.MultipartRequest('POST', url)
-        ..fields['upload_preset'] = _uploadPreset
-        ..files.add(await http.MultipartFile.fromPath('file', imageFile.path));
 
-      final response = await request.send();
+      // Convertimos los bytes de la imagen a un String Base64
+      final String base64Image = base64Encode(imageBytes);
+      // Le agregamos el encabezado para que Cloudinary sepa que es una imagen JPEG
+      final String dataUri = 'data:image/jpeg;base64,$base64Image';
+
+      // Hacemos un POST normal (esto no falla nunca en Web)
+      final response = await http.post(
+        url,
+        body: {
+          'upload_preset': _uploadPreset,
+          'file': dataUri,
+        },
+      );
 
       if (response.statusCode == 200) {
-        final responseData = await response.stream.toBytes();
-        final responseString = String.fromCharCodes(responseData);
-        final jsonMap = jsonDecode(responseString);
+        final jsonMap = jsonDecode(response.body);
         return jsonMap['secure_url'];
       } else {
-        debugPrint("Error Cloudinary: ${response.statusCode}");
-        _showError("No se pudo subir a la nube. Verifica tu conexión.");
+        // Esto se imprimirá en tu consola (oculto al usuario) para saber por qué falló
+        debugPrint(
+            "❌ Error Cloudinary [${response.statusCode}]: ${response.body}");
+        _showMaintenanceError();
         return null;
       }
     } catch (e) {
-      _showError("Error de conexión: $e");
+      debugPrint("❌ Error de red con Cloudinary: $e");
+      _showMaintenanceError();
       return null;
     }
   }
 
-  void _showError(String msg) {
+  void _showMaintenanceError() {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), backgroundColor: Colors.red));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text("Función en mantenimiento, por favor contactar a soporte."),
+      backgroundColor: Colors.red,
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 
   void _validateAndContinue() {
     if (_uploadedImageUrls.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Debes subir al menos una imagen')),
+        const SnackBar(
+          content: Text('Debes subir al menos una imagen'),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
       return;
     }

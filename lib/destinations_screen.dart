@@ -347,6 +347,10 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                     // Si el campo no existe o es false → se muestra
                     if (data['isPrivate'] == true) return false;
 
+                    // Excluir destinos con isInApp == false
+                    // Si el campo no existe o es true → se muestra
+                    if (data['isInApp'] == false) return false;
+
                     final matchesCategory =
                         selectedCategories.contains('Todas') ||
                             selectedCategories
@@ -543,6 +547,7 @@ class DestinationsScreenState extends State<DestinationsScreen> {
         userId: widget.userId,
         destinationId: destinationId,
         data: data,
+        currencySymbol: data['divisa']?.toString() == 'eur' ? '€' : '\$',
         onTap: () {
           // CORRECCIÓN: Agregar ID al mapa data antes de enviar
           data['id'] = destinationId;
@@ -575,6 +580,8 @@ class DestinationCard extends StatefulWidget {
   final String destinationId;
   final Map<String, dynamic> data;
   final VoidCallback onTap;
+  // Símbolo de moneda: '$' para USD (por defecto) o '€' para EUR
+  final String currencySymbol;
 
   const DestinationCard({
     super.key,
@@ -589,6 +596,7 @@ class DestinationCard extends StatefulWidget {
     required this.destinationId,
     required this.data,
     required this.onTap,
+    this.currencySymbol = '\$',
   });
 
   @override
@@ -839,7 +847,7 @@ class _DestinationCardState extends State<DestinationCard> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
-                              '\$${widget.price.toStringAsFixed(0)}',
+                              '${widget.currencySymbol}${widget.price.toStringAsFixed(0)}',
                               style: const TextStyle(
                                 color: Color.fromRGBO(17, 48, 73, 1),
                                 fontSize: 14,

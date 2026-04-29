@@ -246,6 +246,8 @@ class SavedDestinationsScreenState extends State<SavedDestinationsScreen> {
                         price: minPrice,
                         screenWidth: screenWidth,
                         isSaved: true,
+                        currencySymbol:
+                            data['divisa']?.toString() == 'eur' ? '€' : '\$',
                         onFavoriteTap: () {
                           // Borra inmediatamente de Hive
                           savedDestinationsBox.delete(key);
@@ -277,6 +279,8 @@ class DestinationCard extends StatefulWidget {
   final bool isSaved;
   final VoidCallback onFavoriteTap;
   final VoidCallback onTap;
+  // Símbolo de moneda: '$' para USD (por defecto) o '€' para EUR
+  final String currencySymbol;
 
   const DestinationCard({
     super.key,
@@ -289,6 +293,7 @@ class DestinationCard extends StatefulWidget {
     required this.isSaved,
     required this.onFavoriteTap,
     required this.onTap,
+    this.currencySymbol = '\$',
   });
 
   @override
@@ -507,7 +512,7 @@ class _DestinationCardState extends State<DestinationCard> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
-                              '\$${widget.price.toStringAsFixed(0)}',
+                              '${widget.currencySymbol}${widget.price.toStringAsFixed(0)}',
                               style: const TextStyle(
                                 color: Color.fromRGBO(17, 48, 73, 1),
                                 fontSize: 14,

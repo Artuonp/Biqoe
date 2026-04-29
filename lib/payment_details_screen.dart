@@ -32,6 +32,8 @@ class PaymentDetailsScreen extends StatefulWidget {
   final String? destinationId;
   // Respuestas del cliente a las preguntas del proveedor
   final Map<String, dynamic> questionAnswers;
+  // Divisa del destino: 'usd' (por defecto) o 'eur'
+  final String divisa;
 
   const PaymentDetailsScreen({
     super.key,
@@ -44,6 +46,7 @@ class PaymentDetailsScreen extends StatefulWidget {
     required this.packagesData,
     this.destinationId,
     this.questionAnswers = const {},
+    this.divisa = 'usd',
   });
 
   @override
@@ -70,6 +73,11 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
 
   // Tasa de cambio — se carga en _fetchDestinationData para mostrarla
   double _exchangeRate = 0.0;
+
+  // ── Helpers de divisa ─────────────────────────────────────────────────────
+  // Devuelven el símbolo y la etiqueta correctos según widget.divisa
+  String get _currencySymbol => widget.divisa == 'eur' ? '€' : '\$';
+  String get _currencyLabel => widget.divisa == 'eur' ? 'EUR' : 'USD';
 
   List<Map<String, dynamic>> _cleanPackagesData = [];
 
@@ -294,21 +302,76 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
         }
       }
 
-      // Cargar tasa de cambio
+// Cargar tasa de cambio (SISTEMA DUAL AUTOMÁTICO - MEDIANOCHE)
       try {
         final tasaUrl =
             'https://firestore.googleapis.com/v1/projects/$_projectId/databases/(default)/documents/config/tasa?key=$_apiKey';
         final tasaResponse = await http
             .get(Uri.parse(tasaUrl))
             .timeout(const Duration(seconds: 5));
+
         if (tasaResponse.statusCode == 200) {
           final parsedTasa =
               _convertFirestoreMap(jsonDecode(tasaResponse.body));
-          if (parsedTasa['valor'] != null) {
-            final v = parsedTasa['valor'];
-            _exchangeRate = (v is num)
-                ? v.toDouble()
-                : (double.tryParse(v.toString()) ?? 0.0);
+
+          // Determinamos qué campos leer según la divisa
+          final String fieldActual =
+              widget.divisa == 'eur' ? 'eur_actual' : 'usd_actual';
+          final String fieldNuevo =
+              widget.divisa == 'eur' ? 'eur_nuevo' : 'usd_nuevo';
+          final String fieldFallback = widget.divisa == 'eur'
+              ? 'eur'
+              : 'valor'; // Por si los nuevos no existen aún
+
+          double tasaActual = 0.0;
+          double tasaNueva = 0.0;
+          double tasaFallback = 0.0;
+
+          // Leer valores de Firestore
+          if (parsedTasa[fieldActual] != null) {
+            tasaActual = (parsedTasa[fieldActual] is num)
+                ? parsedTasa[fieldActual].toDouble()
+                : (double.tryParse(parsedTasa[fieldActual].toString()) ?? 0.0);
+          }
+          if (parsedTasa[fieldNuevo] != null) {
+            tasaNueva = (parsedTasa[fieldNuevo] is num)
+                ? parsedTasa[fieldNuevo].toDouble()
+                : (double.tryParse(parsedTasa[fieldNuevo].toString()) ?? 0.0);
+          }
+          if (parsedTasa[fieldFallback] != null) {
+            tasaFallback = (parsedTasa[fieldFallback] is num)
+                ? parsedTasa[fieldFallback].toDouble()
+                : (double.tryParse(parsedTasa[fieldFallback].toString()) ??
+                    0.0);
+          }
+
+          // Si no hay tasas duales aún en BD, usamos el fallback tradicional
+          if (tasaActual == 0.0 && tasaNueva == 0.0) {
+            _exchangeRate = tasaFallback;
+          } else {
+            // LÓGICA DE MEDIANOCHE: ¿Qué tasa usamos?
+            bool usarTasaNueva = false;
+
+            if (parsedTasa['fecha_activacion'] != null) {
+              try {
+                // toLocal() asegura que la hora se compare en el huso horario de Venezuela/del dispositivo
+                DateTime fechaActivacion =
+                    DateTime.parse(parsedTasa['fecha_activacion'].toString())
+                        .toLocal();
+                DateTime ahora = DateTime.now();
+
+                // Si la hora actual ya cruzó la medianoche programada
+                if (ahora.isAfter(fechaActivacion) ||
+                    ahora.isAtSameMomentAs(fechaActivacion)) {
+                  usarTasaNueva = true;
+                }
+              } catch (_) {}
+            }
+
+            // Asignamos la tasa correcta. Si alguna es 0 por error, usa la otra de respaldo.
+            _exchangeRate = usarTasaNueva
+                ? (tasaNueva > 0 ? tasaNueva : tasaActual)
+                : (tasaActual > 0 ? tasaActual : tasaNueva);
           }
         }
       } catch (_) {}
@@ -493,6 +556,8 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
         'estado': toFV('pendiente'),
         'code': toFV(code),
         'packages': toFV(packages),
+        // Divisa del destino — campo nuevo, no afecta los campos existentes
+        'divisa': toFV(widget.divisa),
         // Respuestas del cliente a las preguntas del proveedor
         if (widget.questionAnswers.isNotEmpty)
           'respuestasPreguntas': toFV(widget.questionAnswers),
@@ -768,9 +833,9 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
         '<tr><td style="padding:8px 0;color:#666;">Método de pago:</td>'
         '<td style="text-align:right;">$paymentMethod</td></tr>'
         '<tr style="background:#f0f7ff;"><td style="padding:8px 5px;'
-        'color:#113049;font-weight:bold;">Monto pagado:</td>'
+        'color:#113049;font-weight:bold;">Monto pagado (${widget.divisa.toUpperCase()}):</td>'
         '<td style="text-align:right;font-weight:bold;color:#113049;">'
-        '\$$paidStr</td></tr>'
+        '${widget.divisa == 'eur' ? '€' : '\$'}$paidStr</td></tr>'
         '</table>'
         '<p style="text-align:center;color:#888;font-size:12px;margin-top:20px;">'
         '&copy; $yearStr Biqoe App</p>'
@@ -1088,10 +1153,11 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
     drawText(paymentMethod, W - padding - 12 - 160, cy + 10,
         fontSize: 9, color: Colors.black, maxWidth: 160);
     // Monto pagado
-    drawText('Monto pagado (USD)', padding + 12, cy + 10 + rowH,
-        fontSize: 9, color: const Color(0xFF888888));
-    drawText('\$${paidAmount.toStringAsFixed(2)}', W - padding - 12 - 160,
+    drawText('Monto pagado (${widget.divisa.toUpperCase()})', padding + 12,
         cy + 10 + rowH,
+        fontSize: 9, color: const Color(0xFF888888));
+    drawText('$_currencySymbol${paidAmount.toStringAsFixed(2)}',
+        W - padding - 12 - 160, cy + 10 + rowH,
         fontSize: 11,
         color: Colors.black,
         weight: FontWeight.bold,
@@ -1108,8 +1174,10 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
       final extra = tasa > 0 ? rowH * 3 : rowH * 2;
       drawText('Saldo restante', padding + 12, cy + 10 + extra,
           fontSize: 9, color: const Color(0xFF888888));
-      drawText('\$${(totalAmount - paidAmount).toStringAsFixed(2)}',
-          W - padding - 12 - 160, cy + 10 + extra,
+      drawText(
+          '$_currencySymbol${(totalAmount - paidAmount).toStringAsFixed(2)}',
+          W - padding - 12 - 160,
+          cy + 10 + extra,
           fontSize: 11,
           color: const Color(0xFFE65100),
           weight: FontWeight.bold,
@@ -1519,14 +1587,14 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
                             _receiptRow('Fecha', fechaStr),
                             _receiptRow('Método de pago', paymentMethod),
                             _receiptRow('Monto pagado',
-                                '\$${paidAmount.toStringAsFixed(2)} USD',
+                                '$_currencySymbol${paidAmount.toStringAsFixed(2)} $_currencyLabel',
                                 bold: true),
                             if (tasa > 0)
                               _receiptRow('Equivalente',
                                   'Bs ${amountBs.toStringAsFixed(2)}'),
                             if (totalAmount > paidAmount)
                               _receiptRow('Saldo restante',
-                                  '\$${(totalAmount - paidAmount).toStringAsFixed(2)} USD',
+                                  '$_currencySymbol${(totalAmount - paidAmount).toStringAsFixed(2)} $_currencyLabel',
                                   color: Colors.orange[800]!),
                           ],
                         ),
@@ -1815,8 +1883,11 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
             child: pw.Column(children: [
               _pdfRow('Método de pago', paymentMethod, nStyle, hStyle),
               pw.SizedBox(height: 6),
-              _pdfRow('Monto pagado (USD)',
-                  '\$${paidAmount.toStringAsFixed(2)}', bStyle, hStyle),
+              _pdfRow(
+                  'Monto pagado (${widget.divisa.toUpperCase()})',
+                  '$_currencySymbol${paidAmount.toStringAsFixed(2)}',
+                  bStyle,
+                  hStyle),
               if (tasa > 0) ...[
                 pw.SizedBox(height: 4),
                 _pdfRow('Monto en Bs (Tasa: ${tasa.toStringAsFixed(2)})',
@@ -1824,12 +1895,15 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
               ],
               if (totalAmount > paidAmount) ...[
                 pw.SizedBox(height: 4),
-                _pdfRow('Total del plan', '\$${totalAmount.toStringAsFixed(2)}',
-                    nStyle, hStyle),
+                _pdfRow(
+                    'Total del plan',
+                    '$_currencySymbol${totalAmount.toStringAsFixed(2)}',
+                    nStyle,
+                    hStyle),
                 pw.SizedBox(height: 4),
                 _pdfRow(
                     'Saldo restante',
-                    '\$${(totalAmount - paidAmount).toStringAsFixed(2)}',
+                    '$_currencySymbol${(totalAmount - paidAmount).toStringAsFixed(2)}',
                     pw.TextStyle(
                         fontSize: 11,
                         fontWeight: pw.FontWeight.bold,
@@ -2207,7 +2281,7 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                "\$${amountToday.toStringAsFixed(2)}",
+                "$_currencySymbol${amountToday.toStringAsFixed(2)}",
                 style: GoogleFonts.poppins(
                     color: Colors.white,
                     fontSize: 32,
@@ -2217,7 +2291,7 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
               const SizedBox(width: 6),
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
-                child: Text("USD",
+                child: Text(_currencyLabel,
                     style: GoogleFonts.poppins(
                         color: Colors.white60, fontSize: 14)),
               ),
@@ -2261,7 +2335,8 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
                 Text("Precio total del plan:",
                     style: GoogleFonts.poppins(
                         color: Colors.white70, fontSize: 11)),
-                Text("\$${widget.totalPrice.toStringAsFixed(2)} USD",
+                Text(
+                    "$_currencySymbol${widget.totalPrice.toStringAsFixed(2)} $_currencyLabel",
                     style: GoogleFonts.poppins(
                         color: Colors.white,
                         fontSize: 11,
@@ -2275,7 +2350,8 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
                 Text("Saldo restante:",
                     style: GoogleFonts.poppins(
                         color: Colors.white70, fontSize: 11)),
-                Text("\$${restante.toStringAsFixed(2)} USD",
+                Text(
+                    "$_currencySymbol${restante.toStringAsFixed(2)} $_currencyLabel",
                     style: GoogleFonts.poppins(
                         color: Colors.amber,
                         fontSize: 11,
@@ -2303,189 +2379,198 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
             icon: const Icon(Icons.arrow_back, color: Colors.black),
             onPressed: () => Navigator.pop(context)),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Datos de contacto (invitado / Safari) ──────────────────
-            if (_isGuest) ...[
-              const _SectionTitle(title: "Tus datos de contacto"),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: _cardDecoration(),
-                child: Column(
-                  children: [
-                    _buildTextField(
-                        controller: _guestNameCtrl,
-                        label: "Nombre completo",
-                        icon: Icons.person_outline),
-                    const SizedBox(height: 12),
-                    _buildTextField(
-                        controller: _guestEmailCtrl,
-                        label: "Correo electrónico",
-                        icon: Icons.email_outlined,
-                        type: TextInputType.emailAddress),
-                    const SizedBox(height: 12),
-                    _buildTextField(
-                        controller: _guestPhoneCtrl,
-                        label: "Teléfono (WhatsApp)",
-                        icon: Icons.phone_outlined,
-                        type: TextInputType.phone),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 25),
-            ],
-
-            // ── Bloque de monto — SIEMPRE visible ──────────────────────
-            if (_isLoadingBankData)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else ...[
-              _buildAmountSummary(),
-              const SizedBox(height: 20),
-            ],
-
-            // ── Opción cuotas ───────────────────────────────────────────
-            if (_canPayInInstallments && !_isLoadingBankData) ...[
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                    color: kPrimaryColor.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                        color: kPrimaryColor.withValues(alpha: 0.2))),
-                child: SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text("Pagar en cuotas",
-                      style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.bold, color: kPrimaryColor)),
-                  subtitle: Text(
-                      "Paga el ${_installmentConfig.isNotEmpty ? _installmentConfig[0].toStringAsFixed(0) : 50}% hoy y el resto después.",
-                      style: GoogleFonts.poppins(fontSize: 12)),
-                  value: _payInInstallments,
-                  activeThumbColor: kPrimaryColor,
-                  onChanged: (val) => setState(() => _payInInstallments = val),
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
-
-            // ── Datos bancarios del proveedor ───────────────────────────
-            const _SectionTitle(title: "Realiza el pago a esta cuenta"),
-            _isLoadingBankData
-                ? const Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Center(child: CircularProgressIndicator()))
-                : Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(20),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Datos de contacto (invitado / Safari) ──────────────────
+                if (_isGuest) ...[
+                  const _SectionTitle(title: "Tus datos de contacto"),
+                  Container(
+                    padding: const EdgeInsets.all(16),
                     decoration: _cardDecoration(),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Icon(
-                                widget.paymentMethod.contains('Zelle')
-                                    ? Icons.attach_money
-                                    : Icons.account_balance,
-                                color: kPrimaryColor),
-                            const SizedBox(width: 10),
-                            Text(widget.paymentMethod,
-                                style: GoogleFonts.poppins(
-                                    fontWeight: FontWeight.bold, fontSize: 16)),
-                          ],
-                        ),
-                        const Divider(height: 25),
-                        if (_providerBankData.isEmpty)
-                          Text(
-                              "No hay datos disponibles para este método. Contacta soporte.",
-                              style: GoogleFonts.poppins(
-                                  color: const Color.fromRGBO(17, 48, 73, 1)))
-                        else
-                          ..._buildBankDataRows(),
+                        _buildTextField(
+                            controller: _guestNameCtrl,
+                            label: "Nombre completo",
+                            icon: Icons.person_outline),
+                        const SizedBox(height: 12),
+                        _buildTextField(
+                            controller: _guestEmailCtrl,
+                            label: "Correo electrónico",
+                            icon: Icons.email_outlined,
+                            type: TextInputType.emailAddress),
+                        const SizedBox(height: 12),
+                        _buildTextField(
+                            controller: _guestPhoneCtrl,
+                            label: "Teléfono (WhatsApp)",
+                            icon: Icons.phone_outlined,
+                            type: TextInputType.phone),
                       ],
                     ),
                   ),
-            const SizedBox(height: 25),
+                  const SizedBox(height: 25),
+                ],
 
-            // ── Datos de la transferencia ───────────────────────────────
-            if (widget.paymentMethod != 'Efectivo' &&
-                widget.paymentMethod != 'Gratis') ...[
-              const _SectionTitle(title: "Reporta tu transferencia"),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: _cardDecoration(),
-                child: Column(
-                  children: [
-                    if (widget.paymentMethod == 'Pago móvil') ...[
-                      _buildTextField(
-                          controller: _transactionCtrl,
-                          label: "Referencia (últimos 4 dígitos)",
-                          icon: Icons.confirmation_number),
-                      const SizedBox(height: 12),
-                      _buildTextField(
-                          controller: _payerIdCtrl,
-                          label: "Cédula del titular",
-                          icon: Icons.badge),
-                      const SizedBox(height: 12),
-                      _buildTextField(
-                          controller: _payerPhoneCtrl,
-                          label: "Teléfono del titular",
-                          icon: Icons.phone_android,
-                          type: TextInputType.phone),
-                    ] else ...[
-                      _buildTextField(
-                          controller: _payerNameCtrl,
-                          label: "Nombre del titular",
-                          icon: Icons.person),
-                      const SizedBox(height: 12),
-                      _buildTextField(
-                          controller: _payerEmailCtrl,
-                          label: "Correo / Usuario",
-                          icon: Icons.email),
-                      const SizedBox(height: 12),
-                      _buildTextField(
-                          controller: _transactionCtrl,
-                          label: "Código de referencia / confirmación",
-                          icon: Icons.confirmation_number),
-                    ]
-                  ],
+                // ── Bloque de monto — SIEMPRE visible ──────────────────────
+                if (_isLoadingBankData)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else ...[
+                  _buildAmountSummary(),
+                  const SizedBox(height: 20),
+                ],
+
+                // ── Opción cuotas ───────────────────────────────────────────
+                if (_canPayInInstallments && !_isLoadingBankData) ...[
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                        color: kPrimaryColor.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                            color: kPrimaryColor.withValues(alpha: 0.2))),
+                    child: SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text("Pagar en cuotas",
+                          style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.bold,
+                              color: kPrimaryColor)),
+                      subtitle: Text(
+                          "Paga el ${_installmentConfig.isNotEmpty ? _installmentConfig[0].toStringAsFixed(0) : 50}% hoy y el resto después.",
+                          style: GoogleFonts.poppins(fontSize: 12)),
+                      value: _payInInstallments,
+                      activeThumbColor: kPrimaryColor,
+                      onChanged: (val) =>
+                          setState(() => _payInInstallments = val),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+
+                // ── Datos bancarios del proveedor ───────────────────────────
+                const _SectionTitle(title: "Realiza el pago a esta cuenta"),
+                _isLoadingBankData
+                    ? const Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Center(child: CircularProgressIndicator()))
+                    : Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(20),
+                        decoration: _cardDecoration(),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                    widget.paymentMethod.contains('Zelle')
+                                        ? Icons.attach_money
+                                        : Icons.account_balance,
+                                    color: kPrimaryColor),
+                                const SizedBox(width: 10),
+                                Text(widget.paymentMethod,
+                                    style: GoogleFonts.poppins(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16)),
+                              ],
+                            ),
+                            const Divider(height: 25),
+                            if (_providerBankData.isEmpty)
+                              Text(
+                                  "No hay datos disponibles para este método. Contacta soporte.",
+                                  style: GoogleFonts.poppins(
+                                      color:
+                                          const Color.fromRGBO(17, 48, 73, 1)))
+                            else
+                              ..._buildBankDataRows(),
+                          ],
+                        ),
+                      ),
+                const SizedBox(height: 25),
+
+                // ── Datos de la transferencia ───────────────────────────────
+                if (widget.paymentMethod != 'Efectivo' &&
+                    widget.paymentMethod != 'Gratis') ...[
+                  const _SectionTitle(title: "Reporta tu transferencia"),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: _cardDecoration(),
+                    child: Column(
+                      children: [
+                        if (widget.paymentMethod == 'Pago móvil') ...[
+                          _buildTextField(
+                              controller: _transactionCtrl,
+                              label: "Referencia (últimos 4 dígitos)",
+                              icon: Icons.confirmation_number),
+                          const SizedBox(height: 12),
+                          _buildTextField(
+                              controller: _payerIdCtrl,
+                              label: "Cédula del titular",
+                              icon: Icons.badge),
+                          const SizedBox(height: 12),
+                          _buildTextField(
+                              controller: _payerPhoneCtrl,
+                              label: "Teléfono del titular",
+                              icon: Icons.phone_android,
+                              type: TextInputType.phone),
+                        ] else ...[
+                          _buildTextField(
+                              controller: _payerNameCtrl,
+                              label: "Nombre del titular",
+                              icon: Icons.person),
+                          const SizedBox(height: 12),
+                          _buildTextField(
+                              controller: _payerEmailCtrl,
+                              label: "Correo / Usuario",
+                              icon: Icons.email),
+                          const SizedBox(height: 12),
+                          _buildTextField(
+                              controller: _transactionCtrl,
+                              label: "Código de referencia / confirmación",
+                              icon: Icons.confirmation_number),
+                        ]
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 30),
+
+                // ── Botón confirmar ─────────────────────────────────────────
+                SizedBox(
+                  width: double.infinity,
+                  height: 55,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: kPrimaryColor,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        elevation: 4),
+                    onPressed: _isProcessing ? null : _validateAndSubmit,
+                    child: _isProcessing
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2))
+                        : Text("Confirmar pago",
+                            style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white)),
+                  ),
                 ),
-              ),
-            ],
-            const SizedBox(height: 30),
-
-            // ── Botón confirmar ─────────────────────────────────────────
-            SizedBox(
-              width: double.infinity,
-              height: 55,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: kPrimaryColor,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    elevation: 4),
-                onPressed: _isProcessing ? null : _validateAndSubmit,
-                child: _isProcessing
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2))
-                    : Text("Confirmar pago",
-                        style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white)),
-              ),
+                const SizedBox(height: 20),
+              ],
             ),
-            const SizedBox(height: 20),
-          ],
+          ),
         ),
       ),
     );

@@ -53,6 +53,11 @@ class BookingsScreenState extends State<BookingsScreen> {
     }
   }
 
+  /// Devuelve el símbolo de la divisa del booking: '€' para EUR, '$' para USD
+  String _cs(Map<String, dynamic> booking) {
+    return booking['divisa']?.toString() == 'eur' ? '€' : '\$';
+  }
+
   // --- ABRIR DIÁLOGO DE PAGO ---
   void _showPaymentRegistrationDialog(
       BuildContext context, Map<String, dynamic> booking) {
@@ -189,7 +194,8 @@ class BookingsScreenState extends State<BookingsScreen> {
                                       fontSize: 10))),
                           pw.Padding(
                               padding: const pw.EdgeInsets.all(5),
-                              child: pw.Text("Monto (USD)",
+                              child: pw.Text(
+                                  "Monto (${booking['divisa']?.toString() == 'eur' ? 'EUR' : 'USD'})",
                                   style: pw.TextStyle(
                                       fontWeight: pw.FontWeight.bold,
                                       fontSize: 10))),
@@ -212,7 +218,8 @@ class BookingsScreenState extends State<BookingsScreen> {
                                   style: normalStyle)),
                           pw.Padding(
                               padding: const pw.EdgeInsets.all(5),
-                              child: pw.Text("\$${p['amount']}",
+                              child: pw.Text(
+                                  "${booking['divisa']?.toString() == 'eur' ? '€' : '\$'}${p['amount']}",
                                   style: normalStyle)),
                         ]);
                       }).toList())
@@ -339,7 +346,7 @@ class BookingsScreenState extends State<BookingsScreen> {
                 Text(
                     remaining < 0.1
                         ? "Pagado"
-                        : "Resta: \$${remaining.toStringAsFixed(2)}",
+                        : "Resta: ${_cs(booking)}${remaining.toStringAsFixed(2)}",
                     style: GoogleFonts.poppins(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -376,10 +383,11 @@ class BookingsScreenState extends State<BookingsScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("Pagado: \$${verifiedPaid.toStringAsFixed(2)}",
+                Text(
+                    "Pagado: ${_cs(booking)}${verifiedPaid.toStringAsFixed(2)}",
                     style: GoogleFonts.poppins(
                         fontSize: 11, color: Colors.grey[700])),
-                Text("Total: \$${total.toStringAsFixed(2)}",
+                Text("Total: ${_cs(booking)}${total.toStringAsFixed(2)}",
                     style: GoogleFonts.poppins(
                         fontSize: 11, color: Colors.grey[700])),
               ],
@@ -390,7 +398,7 @@ class BookingsScreenState extends State<BookingsScreen> {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    "Pendiente por verificar: \$${pendingAmount.toStringAsFixed(2)}",
+                    "Pendiente por verificar: ${_cs(booking)}${pendingAmount.toStringAsFixed(2)}",
                     style: GoogleFonts.poppins(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
@@ -433,7 +441,7 @@ class BookingsScreenState extends State<BookingsScreen> {
         children: [
           const Icon(Icons.check_circle, color: Colors.green, size: 18),
           const SizedBox(width: 8),
-          Text("Pagado totalmente (\$${total.toStringAsFixed(2)})",
+          Text("Pagado totalmente (${_cs(booking)}${total.toStringAsFixed(2)})",
               style: GoogleFonts.poppins(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,

@@ -787,6 +787,9 @@ class SearchScreenState extends State<SearchScreen> {
                             onTap: () => context.push('/d/${destination.id}',
                                 extra: data),
                             screenWidth: double.infinity, // Ocupa todo el ancho
+                            currencySymbol: data['divisa']?.toString() == 'eur'
+                                ? '€'
+                                : '\$',
                           ),
                         ),
                       );
@@ -988,6 +991,8 @@ class SearchScreenState extends State<SearchScreen> {
                       onTap: () =>
                           context.push('/d/${destination.id}', extra: data),
                       screenWidth: 280,
+                      currencySymbol:
+                          data['divisa']?.toString() == 'eur' ? '€' : '\$',
                     ),
                   ),
                 );
@@ -1068,6 +1073,8 @@ class DestinationCard extends StatefulWidget {
   // Estos son los dos parámetros que te faltaban:
   final double screenWidth;
   final VoidCallback onTap;
+  // Símbolo de moneda: '$' para USD (por defecto) o '€' para EUR
+  final String currencySymbol;
 
   const DestinationCard({
     super.key,
@@ -1080,6 +1087,7 @@ class DestinationCard extends StatefulWidget {
     required this.onFavoriteTap,
     required this.screenWidth, // <--- Nuevo
     required this.onTap, // <--- Nuevo
+    this.currencySymbol = '\$',
   });
 
   @override
@@ -1311,7 +1319,7 @@ class _DestinationCardState extends State<DestinationCard> {
                           fontSize: 10),
                     ),
                     Text(
-                      '\$${widget.price.toStringAsFixed(0)}',
+                      '${widget.currencySymbol}${widget.price.toStringAsFixed(0)}',
                       style: GoogleFonts.poppins(
                           color: Colors.white,
                           fontSize: 14,

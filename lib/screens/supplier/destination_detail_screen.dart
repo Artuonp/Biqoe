@@ -407,6 +407,10 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
       }
     }
 
+    // Símbolo de divisa según configuración del destino
+    final String currencySymbol =
+        destino['divisa']?.toString() == 'eur' ? '€' : '\$';
+
     return Scaffold(
       backgroundColor: kBackgroundColor,
       body: Stack(
@@ -522,118 +526,127 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                 ),
               ),
               SliverToBoxAdapter(
-                child: Container(
-                  transform: Matrix4.translationValues(0, -30, 0),
-                  decoration: const BoxDecoration(
-                    color: kBackgroundColor,
-                    borderRadius:
-                        BorderRadius.vertical(top: Radius.circular(30)),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 35, 20, 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 800),
+                    child: Container(
+                      transform: Matrix4.translationValues(0, -30, 0),
+                      decoration: const BoxDecoration(
+                        color: kBackgroundColor,
+                        borderRadius:
+                            BorderRadius.vertical(top: Radius.circular(30)),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 35, 20, 20),
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    destino['nombre']?.toString() ??
-                                        'Sin nombre',
-                                    style: GoogleFonts.poppins(
-                                        fontSize: 26,
-                                        fontWeight: FontWeight.bold,
-                                        color: kPrimaryColor,
-                                        height: 1.2),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      const Icon(Icons.location_on_outlined,
-                                          color: Colors.grey, size: 18),
-                                      const SizedBox(width: 4),
-                                      Expanded(
-                                        child: Text(
-                                          locationText,
-                                          style: GoogleFonts.poppins(
-                                              fontSize: 14,
-                                              color: Colors.grey[700],
-                                              fontWeight: FontWeight.w500),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
+                                      Text(
+                                        destino['nombre']?.toString() ??
+                                            'Sin nombre',
+                                        style: GoogleFonts.poppins(
+                                            fontSize: 26,
+                                            fontWeight: FontWeight.bold,
+                                            color: kPrimaryColor,
+                                            height: 1.2),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.location_on_outlined,
+                                              color: Colors.grey, size: 18),
+                                          const SizedBox(width: 4),
+                                          Expanded(
+                                            child: Text(
+                                              locationText,
+                                              style: GoogleFonts.poppins(
+                                                  fontSize: 14,
+                                                  color: Colors.grey[700],
+                                                  fontWeight: FontWeight.w500),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),
-                                ],
-                              ),
-                            ),
-                            if (mapsLink.isNotEmpty)
-                              GestureDetector(
-                                onTap: () => _openLink(mapsLink),
-                                child: Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(14),
-                                      boxShadow: [
-                                        BoxShadow(
-                                            color: Colors.black
-                                                .withValues(alpha: 0.08),
-                                            blurRadius: 15,
-                                            offset: const Offset(0, 5))
-                                      ]),
-                                  child: const Icon(Icons.map_outlined,
-                                      color: Colors.blueAccent),
                                 ),
-                              )
+                                if (mapsLink.isNotEmpty)
+                                  GestureDetector(
+                                    onTap: () => _openLink(mapsLink),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                          boxShadow: [
+                                            BoxShadow(
+                                                color: Colors.black
+                                                    .withValues(alpha: 0.08),
+                                                blurRadius: 15,
+                                                offset: const Offset(0, 5))
+                                          ]),
+                                      child: const Icon(Icons.map_outlined,
+                                          color: Colors.blueAccent),
+                                    ),
+                                  )
+                              ],
+                            ),
+                            const SizedBox(height: 30),
+                            Text(
+                              "Selecciona tu experiencia",
+                              style: GoogleFonts.poppins(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: kPrimaryColor),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              "Presiona 'Ver detalles' para conocer más.",
+                              style: GoogleFonts.poppins(
+                                  fontSize: 12, color: Colors.grey),
+                            ),
+                            const SizedBox(height: 20),
+                            if (paquetes.isEmpty)
+                              _buildEmptyState()
+                            else
+                              ListView.separated(
+                                padding: EdgeInsets.zero,
+                                physics: const NeverScrollableScrollPhysics(),
+                                shrinkWrap: true,
+                                itemCount: paquetes.length,
+                                separatorBuilder: (c, i) =>
+                                    const SizedBox(height: 15),
+                                itemBuilder: (context, index) {
+                                  final paquete = paquetes[index] is Map
+                                      ? paquetes[index]
+                                      : {};
+                                  final isSelected =
+                                      selectedPackages.contains(paquete);
+
+                                  return _ExpandablePackageCard(
+                                    paquete: paquete,
+                                    isSelected: isSelected,
+                                    onToggleSelection: () =>
+                                        _togglePackageSelection(paquete),
+                                    currencySymbol: currencySymbol,
+                                  );
+                                },
+                              ),
+                            const SizedBox(height: 100),
                           ],
                         ),
-                        const SizedBox(height: 30),
-                        Text(
-                          "Selecciona tu experiencia",
-                          style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: kPrimaryColor),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          "Presiona 'Ver detalles' para conocer más.",
-                          style: GoogleFonts.poppins(
-                              fontSize: 12, color: Colors.grey),
-                        ),
-                        const SizedBox(height: 20),
-                        if (paquetes.isEmpty)
-                          _buildEmptyState()
-                        else
-                          ListView.separated(
-                            padding: EdgeInsets.zero,
-                            physics: const NeverScrollableScrollPhysics(),
-                            shrinkWrap: true,
-                            itemCount: paquetes.length,
-                            separatorBuilder: (c, i) =>
-                                const SizedBox(height: 15),
-                            itemBuilder: (context, index) {
-                              final paquete =
-                                  paquetes[index] is Map ? paquetes[index] : {};
-                              final isSelected =
-                                  selectedPackages.contains(paquete);
-
-                              return _ExpandablePackageCard(
-                                paquete: paquete,
-                                isSelected: isSelected,
-                                onToggleSelection: () =>
-                                    _togglePackageSelection(paquete),
-                              );
-                            },
-                          ),
-                        const SizedBox(height: 100),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -644,85 +657,92 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
             bottom: 0,
             left: 0,
             right: 0,
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 20,
-                      offset: const Offset(0, -5))
-                ],
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: SafeArea(
-                top: false,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text("Total estimado",
-                              style: GoogleFonts.poppins(
-                                  fontSize: 12, color: Colors.grey)),
-                          Text(
-                            "\$${totalPrice.toStringAsFixed(2)}",
-                            style: GoogleFonts.poppins(
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                                color: kPrimaryColor),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 800),
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 20,
+                          offset: const Offset(0, -5))
+                    ],
+                    borderRadius:
+                        const BorderRadius.vertical(top: Radius.circular(20)),
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text("Total estimado",
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 12, color: Colors.grey)),
+                              Text(
+                                "$currencySymbol${totalPrice.toStringAsFixed(2)}",
+                                style: GoogleFonts.poppins(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                    color: kPrimaryColor),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 20),
+                        ElevatedButton(
+                          onPressed: selectedPackages.isNotEmpty
+                              ? () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => ReservationScreen(
+                                        userId: widget.userId,
+                                        selectedPackages:
+                                            selectedPackages.map((e) {
+                                          final safeMap = <String, dynamic>{};
+                                          if (e is Map) {
+                                            for (var k in e.keys) {
+                                              safeMap[k.toString()] = e[k];
+                                            }
+                                          }
+                                          return safeMap;
+                                        }).toList(),
+                                        planName:
+                                            destino['nombre']?.toString() ??
+                                                'Reserva',
+                                        location: locationText,
+                                        supplier: supplierId,
+                                        destinationId: docId,
+                                      ),
+                                    ),
+                                  );
+                                }
+                              : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: kPrimaryColor,
+                            disabledBackgroundColor: Colors.grey[300],
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 35, vertical: 16),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14)),
+                            elevation: selectedPackages.isNotEmpty ? 5 : 0,
+                          ),
+                          child: Text("Continuar",
+                              style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white)),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 20),
-                    ElevatedButton(
-                      onPressed: selectedPackages.isNotEmpty
-                          ? () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => ReservationScreen(
-                                    userId: widget.userId,
-                                    selectedPackages: selectedPackages.map((e) {
-                                      final safeMap = <String, dynamic>{};
-                                      if (e is Map) {
-                                        for (var k in e.keys) {
-                                          safeMap[k.toString()] = e[k];
-                                        }
-                                      }
-                                      return safeMap;
-                                    }).toList(),
-                                    planName: destino['nombre']?.toString() ??
-                                        'Reserva',
-                                    location: locationText,
-                                    supplier: supplierId,
-                                    destinationId: docId,
-                                  ),
-                                ),
-                              );
-                            }
-                          : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: kPrimaryColor,
-                        disabledBackgroundColor: Colors.grey[300],
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 35, vertical: 16),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
-                        elevation: selectedPackages.isNotEmpty ? 5 : 0,
-                      ),
-                      child: Text("Continuar",
-                          style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white)),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -756,11 +776,13 @@ class _ExpandablePackageCard extends StatefulWidget {
   final dynamic paquete;
   final bool isSelected;
   final VoidCallback onToggleSelection;
+  final String currencySymbol;
 
   const _ExpandablePackageCard({
     required this.paquete,
     required this.isSelected,
     required this.onToggleSelection,
+    this.currencySymbol = '\$',
   });
 
   @override
@@ -852,7 +874,7 @@ class _ExpandablePackageCardState extends State<_ExpandablePackageCard>
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        "\$${pq['precio'] ?? '0'}",
+                        "${widget.currencySymbol}${pq['precio'] ?? '0'}",
                         style: GoogleFonts.poppins(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,

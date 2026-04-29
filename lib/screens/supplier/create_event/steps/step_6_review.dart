@@ -23,6 +23,10 @@ class Step6Review extends StatelessWidget {
     final List images = formData['imagenes'] ?? [];
     final List packages = formData['paquetes'] ?? [];
     final List pagos = formData['metodosPago'] ?? [];
+    // Divisa del destino — 'usd' por defecto para retrocompatibilidad
+    final String divisa =
+        formData['divisa']?.toString() == 'eur' ? 'eur' : 'usd';
+    final String currencySymbol = divisa == 'eur' ? '€' : '\$';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -93,6 +97,11 @@ class Step6Review extends StatelessWidget {
               label: "Categorías",
               value: (formData['categorias'] as List? ?? []).join(', ')),
           _InfoRow(
+              label: "Divisa",
+              value: divisa == 'eur'
+                  ? '€ Euro (EUR) — BCV oficial'
+                  : '\$ Dólar (USD) — BCV oficial'),
+          _InfoRow(
               label: "Maps",
               value: formData['googleMapsLink'] ?? 'No especificado'),
           const SizedBox(height: 20),
@@ -125,7 +134,7 @@ class Step6Review extends StatelessWidget {
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16,
                                     color: kPrimaryColor))),
-                        Text("\$${pkg['precio']}",
+                        Text("$currencySymbol${pkg['precio']}",
                             style: GoogleFonts.poppins(
                                 fontWeight: FontWeight.bold,
                                 color: Colors.green[700],

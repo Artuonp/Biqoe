@@ -58,6 +58,9 @@ class ReservationScreenState extends State<ReservationScreen>
 
   String? _realDocId;
   final String _projectId = 'biqoe-app';
+  // Divisa del destino — 'usd' por defecto, 'eur' si el proveedor lo configuró
+  String _divisa = 'usd';
+  String get _currencySymbol => _divisa == 'eur' ? '€' : '\$';
 
   // --- PREGUNTAS PERSONALIZADAS DEL PROVEEDOR ---
   List<Map<String, dynamic>> _customQuestions = [];
@@ -306,6 +309,9 @@ class ReservationScreenState extends State<ReservationScreen>
               }
             }
             _customQuestions = loadedQuestions;
+            // Leer divisa del destino
+            final rawDivisa = parsedData!['divisa']?.toString();
+            _divisa = rawDivisa == 'eur' ? 'eur' : 'usd';
           });
         }
       }
@@ -729,6 +735,7 @@ class ReservationScreenState extends State<ReservationScreen>
               destinationId: _realDocId ?? widget.destinationId,
               packagesData: cleanPackages,
               questionAnswers: Map<String, dynamic>.from(_questionAnswers),
+              divisa: _divisa,
             ),
           ),
         );
@@ -792,6 +799,18 @@ class ReservationScreenState extends State<ReservationScreen>
     }
   }
 
+  // ── Responsive web helper ─────────────────────────────────────────────────
+  // Centra el contenido y lo limita a 720 px en pantallas grandes,
+  // manteniendo padding normal en móvil.
+  Widget _webConstrained(Widget child) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: child,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -812,7 +831,7 @@ class ReservationScreenState extends State<ReservationScreen>
             child: SingleChildScrollView(
               controller: _scrollController,
               padding: const EdgeInsets.all(20),
-              child: Column(
+              child: _webConstrained(Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(widget.planName,
@@ -884,7 +903,7 @@ class ReservationScreenState extends State<ReservationScreen>
                     ),
                   const SizedBox(height: 20),
                 ],
-              ),
+              )),
             ),
           ),
           Positioned(
@@ -892,63 +911,74 @@ class ReservationScreenState extends State<ReservationScreen>
             left: 0,
             right: 0,
             child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 20,
-                      offset: const Offset(0, -5))
-                ],
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: SafeArea(
-                top: false,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
+              color: Colors.transparent,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 20,
+                            offset: const Offset(0, -5))
+                      ],
+                      borderRadius:
+                          const BorderRadius.vertical(top: Radius.circular(20)),
+                    ),
+                    child: SafeArea(
+                      top: false,
+                      child: Row(
                         children: [
-                          Text("Total a pagar",
-                              style: GoogleFonts.poppins(
-                                  fontSize: 12, color: Colors.grey)),
-                          Text("\$${totalCost.toStringAsFixed(2)}",
-                              style: GoogleFonts.poppins(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                  color: kPrimaryColor)),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text("Total a pagar",
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 12, color: Colors.grey)),
+                                Text(
+                                    "$_currencySymbol${totalCost.toStringAsFixed(2)}",
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.bold,
+                                        color: kPrimaryColor)),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 20),
+                          ElevatedButton(
+                            onPressed: _isLoading
+                                ? null
+                                : _validateAndProcessReservation,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _isLoading
+                                  ? Colors.grey.shade300
+                                  : kPrimaryColor,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 30, vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14)),
+                              elevation: 5,
+                            ),
+                            child: Container(
+                              alignment: Alignment.center,
+                              child: Text("Reservar",
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: _isLoading
+                                          ? Colors.transparent
+                                          : Colors.white)),
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 20),
-                    ElevatedButton(
-                      onPressed:
-                          _isLoading ? null : _validateAndProcessReservation,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            _isLoading ? Colors.grey.shade300 : kPrimaryColor,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 30, vertical: 16),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
-                        elevation: 5,
-                      ),
-                      child: Container(
-                        alignment: Alignment.center,
-                        child: Text("Reservar",
-                            style: GoogleFonts.poppins(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: _isLoading
-                                    ? Colors.transparent
-                                    : Colors.white)),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -1004,7 +1034,8 @@ class ReservationScreenState extends State<ReservationScreen>
                               'Paquete',
                           style: GoogleFonts.poppins(
                               fontWeight: FontWeight.bold, fontSize: 15)),
-                      Text("\$${packageData.package['precio']} x persona",
+                      Text(
+                          "$_currencySymbol${packageData.package['precio']} x persona",
                           style: GoogleFonts.poppins(
                               fontSize: 12, color: Colors.grey[600])),
                     ],
