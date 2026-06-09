@@ -1,7 +1,8 @@
-import 'package:flutter/foundation.dart'; // IMPORTANTE AÑADIDO PARA kIsWeb
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 
 // PANTALLAS PRINCIPALES
@@ -320,6 +321,27 @@ final GoRouter appRouter = GoRouter(
       },
     ),
     // ==================================================
+    // 🔥 RUTA DE ACTIVIDAD POR SLUG: /{proveedor}/{actividad} 🔥
+    // Ejemplo: /tanturismo/glampingentachira3d2noches
+    // Busca en Firestore el destino cuyo proveedor tiene ese slug
+    // y cuyo nombre normalizado coincide con el slug de actividad.
+    // ==================================================
+    GoRoute(
+      path: '/:providerSlug/:activitySlug',
+      builder: (context, state) {
+        final providerSlug = state.pathParameters['providerSlug'] ?? '';
+        final activitySlug = state.pathParameters['activitySlug'] ?? '';
+        final currentUserId = _safeCurrentUser?.uid ?? 'guest';
+
+        return _ActivityBySlugScreen(
+          providerSlug: providerSlug,
+          activitySlug: activitySlug,
+          currentUserId: currentUserId,
+        );
+      },
+    ),
+
+    // ==================================================
     // 🔥 RUTA DEL PERFIL DEL PROVEEDOR BLINDADA 🔥
     // ==================================================
     GoRoute(
@@ -342,6 +364,228 @@ final GoRouter appRouter = GoRouter(
     ),
   ],
 );
+
+// ===========================================================================
+// Widget que resuelve /{providerSlug}/{activitySlug} → DestinationDetailScreen
+// ===========================================================================
+class _ActivityBySlugScreen extends StatefulWidget {
+  final String providerSlug;
+  final String activitySlug;
+  final String currentUserId;
+
+  const _ActivityBySlugScreen({
+    required this.providerSlug,
+    required this.activitySlug,
+    required this.currentUserId,
+  });
+
+  @override
+  State<_ActivityBySlugScreen> createState() => _ActivityBySlugScreenState();
+}
+
+class _ActivityBySlugScreenState extends State<_ActivityBySlugScreen> {
+  String? _destinationId;
+  bool _loading = true;
+  bool _notFound = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  /// Normaliza un string igual que la función _toSlug en destination_detail_screen.
+  String _normalize(String text) {
+    const Map<String, String> accents = {
+      'á': 'a',
+      'é': 'e',
+      'í': 'i',
+      'ó': 'o',
+      'ú': 'u',
+      'à': 'a',
+      'è': 'e',
+      'ì': 'i',
+      'ò': 'o',
+      'ù': 'u',
+      'ä': 'a',
+      'ë': 'e',
+      'ï': 'i',
+      'ö': 'o',
+      'ü': 'u',
+      'â': 'a',
+      'ê': 'e',
+      'î': 'i',
+      'ô': 'o',
+      'û': 'u',
+      'ã': 'a',
+      'õ': 'o',
+      'ñ': 'n',
+      'Á': 'a',
+      'É': 'e',
+      'Í': 'i',
+      'Ó': 'o',
+      'Ú': 'u',
+      'À': 'a',
+      'È': 'e',
+      'Ì': 'i',
+      'Ò': 'o',
+      'Ù': 'u',
+      'Ä': 'a',
+      'Ë': 'e',
+      'Ï': 'i',
+      'Ö': 'o',
+      'Ü': 'u',
+      'Â': 'a',
+      'Ê': 'e',
+      'Î': 'i',
+      'Ô': 'o',
+      'Û': 'u',
+      'Ã': 'a',
+      'Õ': 'o',
+      'Ñ': 'n',
+    };
+    String result = text;
+    accents.forEach((k, v) => result = result.replaceAll(k, v));
+    return result
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+'), '')
+        .replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  Future<void> _resolve() async {
+    try {
+      // 1. Buscar el UID del proveedor a partir de su slug en metadata/slugs
+      final slugsDoc = await FirebaseFirestore.instance
+          .collection('metadata')
+          .doc('slugs')
+          .get();
+
+      if (!slugsDoc.exists) {
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _notFound = true;
+          });
+        }
+        return;
+      }
+
+      final mapping =
+          Map<String, dynamic>.from(slugsDoc.data()?['mapping'] ?? {});
+      final supplierId = mapping[widget.providerSlug]?.toString();
+
+      if (supplierId == null || supplierId.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _notFound = true;
+          });
+        }
+        return;
+      }
+
+      // 2. Buscar todas las actividades de ese proveedor
+      final snap = await FirebaseFirestore.instance
+          .collection('destinos')
+          .where('supplierId', isEqualTo: supplierId)
+          .get();
+
+      // 3. Encontrar la actividad cuyo nombre normalizado coincide
+      String? foundId;
+      for (final doc in snap.docs) {
+        final nombre = doc.data()['nombre']?.toString() ?? '';
+        if (_normalize(nombre) == widget.activitySlug) {
+          foundId = doc.id;
+          break;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _destinationId = foundId;
+          _loading = false;
+          _notFound = foundId == null;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error resolviendo link de actividad: $e');
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _notFound = true;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFF8F9FD),
+        body: Center(
+          child:
+              CircularProgressIndicator(color: Color.fromRGBO(17, 48, 73, 1)),
+        ),
+      );
+    }
+
+    if (_notFound || _destinationId == null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8F9FD),
+        appBar: AppBar(
+            backgroundColor: Colors.white,
+            elevation: 0,
+            leading: BackButton(
+                color: const Color.fromRGBO(17, 48, 73, 1),
+                onPressed: () => context.go('/'))),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.explore_off, size: 60, color: Colors.grey),
+              const SizedBox(height: 16),
+              Text(
+                'Actividad no encontrada',
+                style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[700]),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'El link puede haber cambiado o la actividad ya no está disponible.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 13,
+                    color: Colors.grey[500]),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color.fromRGBO(17, 48, 73, 1),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12))),
+                onPressed: () => context.go('/'),
+                child: const Text('Ir al inicio',
+                    style:
+                        TextStyle(fontFamily: 'Poppins', color: Colors.white)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 4. Renderizar la pantalla de detalle con el ID encontrado
+    return DestinationDetailScreen(
+      destinationId: _destinationId!,
+      userId: widget.currentUserId,
+    );
+  }
+}
 
 class GoRouterRefreshStream extends ChangeNotifier {
   GoRouterRefreshStream(Stream<dynamic> stream) {

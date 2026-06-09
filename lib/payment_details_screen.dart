@@ -34,6 +34,8 @@ class PaymentDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> questionAnswers;
   // Divisa del destino: 'usd' (por defecto) o 'eur'
   final String divisa;
+  // Cuenta específica preseleccionada (cuando el proveedor tiene múltiples)
+  final Map<String, dynamic>? selectedAccountData;
 
   const PaymentDetailsScreen({
     super.key,
@@ -47,6 +49,7 @@ class PaymentDetailsScreen extends StatefulWidget {
     this.destinationId,
     this.questionAnswers = const {},
     this.divisa = 'usd',
+    this.selectedAccountData,
   });
 
   @override
@@ -59,6 +62,7 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
   final _payerPhoneCtrl = TextEditingController();
   final _payerNameCtrl = TextEditingController();
   final _payerEmailCtrl = TextEditingController();
+  final _bankCtrl = TextEditingController(); // banco emisor para Transferencia
   final _guestNameCtrl = TextEditingController();
   final _guestEmailCtrl = TextEditingController();
   final _guestPhoneCtrl = TextEditingController();
@@ -286,18 +290,26 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
           }
         }
 
+        // Si ya viene una cuenta preseleccionada desde ReservationScreen, usarla
         Map? selected;
-        for (var m in methods) {
-          if (m is Map && m['metodo']?.toString() == widget.paymentMethod) {
-            selected = m;
-            break;
+        if (widget.selectedAccountData != null) {
+          selected = widget.selectedAccountData;
+        } else {
+          // Fallback: tomar la primera cuenta que coincida con el método
+          for (var m in methods) {
+            if (m is Map && m['metodo']?.toString() == widget.paymentMethod) {
+              selected = m;
+              break;
+            }
           }
         }
 
         if (selected != null) {
           _providerBankData = {};
           selected.forEach((k, v) {
-            _providerBankData[k.toString()] = v.toString();
+            if (k != 'metodo') {
+              _providerBankData[k.toString()] = v.toString();
+            }
           });
         }
       }
@@ -477,7 +489,12 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
           'referencia': _transactionCtrl.text,
           'cedula': _payerIdCtrl.text,
           'telefono': _payerPhoneCtrl.text,
-        } else if (widget.paymentMethod != 'Efectivo') ...{
+        } else if (widget.paymentMethod == 'Transferencia') ...{
+          'referencia': _transactionCtrl.text,
+          'banco': _bankCtrl.text,
+          'titular': _payerNameCtrl.text,
+        } else if (widget.paymentMethod != 'Efectivo' &&
+            widget.paymentMethod != 'Gratis') ...{
           'referencia': _transactionCtrl.text,
           'email_pago': _payerEmailCtrl.text,
           'titular': _payerNameCtrl.text,
@@ -1189,7 +1206,7 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
     cy += 14;
     drawLine(cy, color: const Color(0xFFDDDDDD));
     cy += 10;
-    drawText('Biqoe — Explora, reserva y vive experiencias únicas en Venezuela',
+    drawText('Biqoe: Explora, reserva y vive experiencias únicas en Venezuela',
         0, cy,
         fontSize: 8,
         color: const Color(0xFFAAAAAA),
@@ -1916,7 +1933,7 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
           pw.Divider(color: PdfColors.grey300),
           pw.Center(
               child: pw.Text(
-                  'Biqoe — Explora, reserva y vive experiencias únicas en Venezuela',
+                  'Biqoe: Explora, reserva y vive experiencias únicas en Venezuela',
                   style: pw.TextStyle(fontSize: 8, color: PdfColors.grey500))),
           pw.Center(
               child: pw.Text(
@@ -1961,6 +1978,14 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
             _payerIdCtrl.text.isEmpty ||
             _payerPhoneCtrl.text.isEmpty) {
           _showErrorDialog("Completa los datos del pago móvil realizado.");
+          return;
+        }
+      } else if (widget.paymentMethod == 'Transferencia') {
+        if (_bankCtrl.text.isEmpty ||
+            _payerNameCtrl.text.isEmpty ||
+            _transactionCtrl.text.isEmpty) {
+          _showErrorDialog(
+              "Completa los datos de la transferencia (banco, titular y referencia).");
           return;
         }
       } else {
@@ -2202,9 +2227,23 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
   }
 
   List<Widget> _buildBankDataRows() {
+    // Mapa de claves técnicas → etiquetas amigables en español
+    const Map<String, String> friendlyLabels = {
+      'banco': 'Banco',
+      'telefono': 'Teléfono',
+      'cedula': 'Cédula',
+      'correo': 'Correo',
+      'titular': 'Titular',
+      'numeroCuenta': 'Cuenta',
+      'documento': 'Documento',
+      'email': 'Correo',
+      'nombre': 'Nombre',
+    };
+
     List<Widget> rows = [];
     for (var k in _providerBankData.keys) {
       if (k != 'metodo') {
+        final label = friendlyLabels[k] ?? k.capitalize();
         rows.add(Padding(
           padding: const EdgeInsets.only(bottom: 12.0),
           child: Row(
@@ -2212,7 +2251,7 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
             children: [
               SizedBox(
                   width: 100,
-                  child: Text(k.capitalize(),
+                  child: Text(label,
                       style: GoogleFonts.poppins(
                           color: Colors.grey[600], fontSize: 13))),
               Expanded(
@@ -2456,44 +2495,75 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
                 ],
 
                 // ── Datos bancarios del proveedor ───────────────────────────
-                const _SectionTitle(title: "Realiza el pago a esta cuenta"),
-                _isLoadingBankData
-                    ? const Padding(
-                        padding: EdgeInsets.all(20),
-                        child: Center(child: CircularProgressIndicator()))
-                    : Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(20),
-                        decoration: _cardDecoration(),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                    widget.paymentMethod.contains('Zelle')
-                                        ? Icons.attach_money
-                                        : Icons.account_balance,
-                                    color: kPrimaryColor),
-                                const SizedBox(width: 10),
-                                Text(widget.paymentMethod,
+                if (widget.paymentMethod == 'Gratis') ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                          color: Colors.green.withValues(alpha: 0.25)),
+                    ),
+                    child: Column(
+                      children: [
+                        const Icon(Icons.card_giftcard,
+                            color: Colors.green, size: 36),
+                        const SizedBox(height: 10),
+                        Text('¡Esta actividad es gratuita!',
+                            style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: Colors.green[800])),
+                        const SizedBox(height: 6),
+                        Text(
+                            'No necesitas realizar ningún pago. Confirma tu reserva con el botón de abajo.',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.poppins(
+                                fontSize: 12, color: Colors.green[700])),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  const _SectionTitle(title: "Realiza el pago a esta cuenta"),
+                  _isLoadingBankData
+                      ? const Padding(
+                          padding: EdgeInsets.all(20),
+                          child: Center(child: CircularProgressIndicator()))
+                      : Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(20),
+                          decoration: _cardDecoration(),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                      widget.paymentMethod.contains('Zelle')
+                                          ? Icons.attach_money
+                                          : Icons.account_balance,
+                                      color: kPrimaryColor),
+                                  const SizedBox(width: 10),
+                                  Text(widget.paymentMethod,
+                                      style: GoogleFonts.poppins(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16)),
+                                ],
+                              ),
+                              const Divider(height: 25),
+                              if (_providerBankData.isEmpty)
+                                Text(
+                                    "No hay datos disponibles para este método. Contacta soporte.",
                                     style: GoogleFonts.poppins(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16)),
-                              ],
-                            ),
-                            const Divider(height: 25),
-                            if (_providerBankData.isEmpty)
-                              Text(
-                                  "No hay datos disponibles para este método. Contacta soporte.",
-                                  style: GoogleFonts.poppins(
-                                      color:
-                                          const Color.fromRGBO(17, 48, 73, 1)))
-                            else
-                              ..._buildBankDataRows(),
-                          ],
+                                        color: const Color.fromRGBO(
+                                            17, 48, 73, 1)))
+                              else
+                                ..._buildBankDataRows(),
+                            ],
+                          ),
                         ),
-                      ),
+                ], // end else (not Gratis)
                 const SizedBox(height: 25),
 
                 // ── Datos de la transferencia ───────────────────────────────
@@ -2521,6 +2591,21 @@ class PaymentDetailsScreenState extends State<PaymentDetailsScreen> {
                               label: "Teléfono del titular",
                               icon: Icons.phone_android,
                               type: TextInputType.phone),
+                        ] else if (widget.paymentMethod == 'Transferencia') ...[
+                          _buildTextField(
+                              controller: _bankCtrl,
+                              label: "Banco emisor (tu banco)",
+                              icon: Icons.account_balance),
+                          const SizedBox(height: 12),
+                          _buildTextField(
+                              controller: _payerNameCtrl,
+                              label: "Nombre del titular",
+                              icon: Icons.person),
+                          const SizedBox(height: 12),
+                          _buildTextField(
+                              controller: _transactionCtrl,
+                              label: "Número de referencia",
+                              icon: Icons.confirmation_number),
                         ] else ...[
                           _buildTextField(
                               controller: _payerNameCtrl,

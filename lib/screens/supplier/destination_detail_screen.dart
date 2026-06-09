@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -40,6 +41,8 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
   Map<String, dynamic>? _destino;
   bool _isLoading = true;
   String? _error;
+  // Slug del proveedor, cargado de forma asíncrona para armar el link compartido
+  String? _providerSlug;
 
   final String _projectId = 'biqoe-app';
 
@@ -69,10 +72,7 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
       final response = await http.get(Uri.parse(url));
 
       if (response.statusCode == 200) {
-        // Obtenemos los datos puros sin forzar tipos
         final dynamic data = jsonDecode(response.body);
-
-        // Lo pasamos a nuestro convertidor inmune a JS
         final Map<String, dynamic> destino = _convertFirestoreMap(data);
 
         if (mounted) {
@@ -89,7 +89,12 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
               isSaved = fallbackSaved.containsKey(key);
             }
           });
-          _debugIncrementViewCount(); // fire-and-forget — no bloqueamos la UI
+          _debugIncrementViewCount();
+          // Cargar el slug del proveedor para el link de compartir
+          final sid = destino['supplierId']?.toString() ??
+              destino['supplier']?.toString() ??
+              '';
+          if (sid.isNotEmpty) _loadProviderSlug(sid);
         }
       } else {
         if (mounted) {
@@ -309,6 +314,118 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
         selectedPackages.add(paquete);
       }
     });
+  }
+
+  Future<void> _loadProviderSlug(String supplierId) async {
+    try {
+      final url =
+          'https://firestore.googleapis.com/v1/projects/$_projectId/databases/(default)/documents/usuarios/$supplierId';
+      final response =
+          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 6));
+      if (response.statusCode == 200) {
+        final doc = _convertFirestoreMap(jsonDecode(response.body));
+        final slug = doc['slug']?.toString() ?? '';
+        if (slug.isNotEmpty && mounted) {
+          setState(() => _providerSlug = slug);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error cargando slug del proveedor: $e');
+    }
+  }
+
+  /// Normaliza un texto a slug URL-safe:
+  /// minúsculas, sin tildes, sin caracteres especiales, sin espacios.
+  String _toSlug(String text) {
+    const Map<String, String> accents = {
+      'á': 'a',
+      'é': 'e',
+      'í': 'i',
+      'ó': 'o',
+      'ú': 'u',
+      'à': 'a',
+      'è': 'e',
+      'ì': 'i',
+      'ò': 'o',
+      'ù': 'u',
+      'ä': 'a',
+      'ë': 'e',
+      'ï': 'i',
+      'ö': 'o',
+      'ü': 'u',
+      'â': 'a',
+      'ê': 'e',
+      'î': 'i',
+      'ô': 'o',
+      'û': 'u',
+      'ã': 'a',
+      'õ': 'o',
+      'ñ': 'n',
+      'Á': 'a',
+      'É': 'e',
+      'Í': 'i',
+      'Ó': 'o',
+      'Ú': 'u',
+      'À': 'a',
+      'È': 'e',
+      'Ì': 'i',
+      'Ò': 'o',
+      'Ù': 'u',
+      'Ä': 'a',
+      'Ë': 'e',
+      'Ï': 'i',
+      'Ö': 'o',
+      'Ü': 'u',
+      'Â': 'a',
+      'Ê': 'e',
+      'Î': 'i',
+      'Ô': 'o',
+      'Û': 'u',
+      'Ã': 'a',
+      'Õ': 'o',
+      'Ñ': 'n',
+    };
+    String result = text;
+    accents.forEach((k, v) => result = result.replaceAll(k, v));
+    result = result
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+'), '')
+        .replaceAll(RegExp(r'[^a-z0-9]'), '');
+    return result;
+  }
+
+  /// Construye el link: Biqoe.com/{providerSlug}/{actividadSlug}
+  String _buildActivityLink(String activityName) {
+    final provSlug = _providerSlug ?? '';
+    final actSlug = _toSlug(activityName);
+    if (provSlug.isEmpty) return 'Biqoe.com/$actSlug';
+    return 'Biqoe.com/$provSlug/$actSlug';
+  }
+
+  void _shareActivityLink(String activityName) {
+    final link = _buildActivityLink(activityName);
+    Clipboard.setData(ClipboardData(text: link));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle_outline,
+                color: Colors.white, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '¡Link copiado! $link',
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: kPrimaryColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   void _openLink(String? url) async {
@@ -599,7 +716,28 @@ class DestinationDetailScreenState extends State<DestinationDetailScreen> {
                                       child: const Icon(Icons.map_outlined,
                                           color: Colors.blueAccent),
                                     ),
-                                  )
+                                  ),
+                                const SizedBox(width: 10),
+                                // ── Botón compartir link ───────────────────
+                                GestureDetector(
+                                  onTap: () => _shareActivityLink(
+                                      destino['nombre']?.toString() ?? ''),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(14),
+                                        boxShadow: [
+                                          BoxShadow(
+                                              color: Colors.black
+                                                  .withValues(alpha: 0.08),
+                                              blurRadius: 15,
+                                              offset: const Offset(0, 5))
+                                        ]),
+                                    child: const Icon(Icons.share_outlined,
+                                        color: kPrimaryColor),
+                                  ),
+                                ),
                               ],
                             ),
                             const SizedBox(height: 30),

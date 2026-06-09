@@ -1,25 +1,143 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'create_event/create_event_screen.dart'; // Importar el Wizard
+import 'create_event/create_event_screen.dart';
 
 const Color kPrimaryColor = Color.fromRGBO(17, 48, 73, 1);
 
-class SupplierExperiencesListScreen extends StatelessWidget {
-  final String supplierId; // <--- AGREGAR ESTO
+/// Normaliza un texto a slug URL-safe (sin tildes, sin especiales, sin espacios).
+String _toActivitySlug(String text) {
+  const Map<String, String> accents = {
+    'á': 'a',
+    'é': 'e',
+    'í': 'i',
+    'ó': 'o',
+    'ú': 'u',
+    'à': 'a',
+    'è': 'e',
+    'ì': 'i',
+    'ò': 'o',
+    'ù': 'u',
+    'ä': 'a',
+    'ë': 'e',
+    'ï': 'i',
+    'ö': 'o',
+    'ü': 'u',
+    'â': 'a',
+    'ê': 'e',
+    'î': 'i',
+    'ô': 'o',
+    'û': 'u',
+    'ã': 'a',
+    'õ': 'o',
+    'ñ': 'n',
+    'Á': 'a',
+    'É': 'e',
+    'Í': 'i',
+    'Ó': 'o',
+    'Ú': 'u',
+    'À': 'a',
+    'È': 'e',
+    'Ì': 'i',
+    'Ò': 'o',
+    'Ù': 'u',
+    'Ä': 'a',
+    'Ë': 'e',
+    'Ï': 'i',
+    'Ö': 'o',
+    'Ü': 'u',
+    'Â': 'a',
+    'Ê': 'e',
+    'Î': 'i',
+    'Ô': 'o',
+    'Û': 'u',
+    'Ã': 'a',
+    'Õ': 'o',
+    'Ñ': 'n',
+  };
+  String result = text;
+  accents.forEach((k, v) => result = result.replaceAll(k, v));
+  return result
+      .toLowerCase()
+      .replaceAll(RegExp(r'\s+'), '')
+      .replaceAll(RegExp(r'[^a-z0-9]'), '');
+}
 
-  // Actualizar constructor
+class SupplierExperiencesListScreen extends StatefulWidget {
+  final String supplierId;
+
   const SupplierExperiencesListScreen({super.key, required this.supplierId});
 
   @override
-  Widget build(BuildContext context) {
-    // ELIMINAR ESTA LÍNEA:
-    // final String currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+  State<SupplierExperiencesListScreen> createState() =>
+      _SupplierExperiencesListScreenState();
+}
 
+class _SupplierExperiencesListScreenState
+    extends State<SupplierExperiencesListScreen> {
+  String? _providerSlug;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProviderSlug();
+  }
+
+  Future<void> _loadProviderSlug() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(widget.supplierId)
+          .get();
+      final slug = doc.data()?['slug']?.toString() ?? '';
+      if (slug.isNotEmpty && mounted) {
+        setState(() => _providerSlug = slug);
+      }
+    } catch (e) {
+      debugPrint('Error cargando slug: $e');
+    }
+  }
+
+  String _buildShareLink(String activityName) {
+    final actSlug = _toActivitySlug(activityName);
+    final provSlug = _providerSlug ?? '';
+    if (provSlug.isEmpty) return 'Biqoe.com/$actSlug';
+    return 'Biqoe.com/$provSlug/$actSlug';
+  }
+
+  void _shareLink(BuildContext context, String activityName) {
+    final link = _buildShareLink(activityName);
+    Clipboard.setData(ClipboardData(text: link));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle_outline,
+                color: Colors.white, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '¡Link copiado! $link',
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: kPrimaryColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color.fromARGB(255, 243, 248, 255),
       appBar: AppBar(
-        title: Text("Mi experiencias",
+        title: Text("Mis actividades",
             style: GoogleFonts.poppins(
                 color: kPrimaryColor, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
@@ -32,8 +150,7 @@ class SupplierExperiencesListScreen extends StatelessWidget {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('destinos')
-            .where('supplierId',
-                isEqualTo: supplierId) // <--- USAR supplierId AQUÍ
+            .where('supplierId', isEqualTo: widget.supplierId)
             .orderBy('createdAt', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
@@ -65,12 +182,11 @@ class SupplierExperiencesListScreen extends StatelessWidget {
               final data = doc.data() as Map<String, dynamic>;
               final String docId = doc.id;
 
-              // Obtener datos seguros
               final String nombre = data['nombre'] ?? 'Sin nombre';
               final String imagen = (data['imagenes'] != null &&
                       (data['imagenes'] as List).isNotEmpty)
                   ? data['imagenes'][0]
-                  : 'https://via.placeholder.com/150'; // Placeholder si no hay foto
+                  : 'https://via.placeholder.com/150';
               final String status = data['status'] ?? 'active';
 
               return Card(
@@ -82,10 +198,7 @@ class SupplierExperiencesListScreen extends StatelessWidget {
                     side: BorderSide(color: Colors.grey.shade200)),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(16),
-                  onTap: () {
-                    // AL TOCAR LA TARJETA: Editar (Pasamos el ID también)
-                    _navigateToEdit(context, data, docId);
-                  },
+                  onTap: () => _navigateToEdit(context, data, docId),
                   child: Column(
                     children: [
                       // IMAGEN Y ESTADO
@@ -147,15 +260,22 @@ class SupplierExperiencesListScreen extends StatelessWidget {
                                 _ActionButton(
                                   icon: Icons.edit_outlined,
                                   label: "Editar",
-                                  color: Color.fromRGBO(17, 48, 73, 1),
+                                  color: kPrimaryColor,
                                   onTap: () =>
                                       _navigateToEdit(context, data, docId),
+                                ),
+                                // COMPARTIR (entre Editar y Eliminar)
+                                _ActionButton(
+                                  icon: Icons.share_outlined,
+                                  label: "Compartir",
+                                  color: kPrimaryColor,
+                                  onTap: () => _shareLink(context, nombre),
                                 ),
                                 // ELIMINAR
                                 _ActionButton(
                                   icon: Icons.delete_outline,
                                   label: "Eliminar",
-                                  color: Color.fromRGBO(17, 48, 73, 1),
+                                  color: kPrimaryColor,
                                   onTap: () =>
                                       _confirmDelete(context, docId, nombre),
                                 ),
@@ -183,7 +303,7 @@ class SupplierExperiencesListScreen extends StatelessWidget {
         builder: (context) => CreateEventScreen(
           eventToEdit: data,
           eventId: docId,
-          supplierId: supplierId, // <--- PASAR EL ID
+          supplierId: widget.supplierId,
         ),
       ),
     );
@@ -207,8 +327,8 @@ class SupplierExperiencesListScreen extends StatelessWidget {
                   style: GoogleFonts.poppins(color: kPrimaryColor))),
           ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white, // botón blanco
-                side: const BorderSide(color: Color.fromRGBO(17, 48, 73, 1)),
+                backgroundColor: Colors.white,
+                side: const BorderSide(color: kPrimaryColor),
                 elevation: 0,
               ),
               onPressed: () async {
@@ -220,8 +340,7 @@ class SupplierExperiencesListScreen extends StatelessWidget {
               },
               child: Text("Eliminar",
                   style: GoogleFonts.poppins(
-                      color: Color.fromRGBO(17, 48, 73, 1),
-                      fontWeight: FontWeight.bold)))
+                      color: kPrimaryColor, fontWeight: FontWeight.bold)))
         ],
       ),
     );

@@ -216,8 +216,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           _currentStep == _totalSteps - 1
               ? 'Confirmar'
               : (widget.eventId != null
-                  ? 'Editar experiencia'
-                  : 'Crear experiencia'),
+                  ? 'Editar actividad'
+                  : 'Crear actividad'),
           style: GoogleFonts.poppins(
               color: const Color.fromRGBO(17, 48, 73, 1),
               fontWeight: FontWeight.bold,

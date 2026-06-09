@@ -2,7 +2,7 @@ name: biqoe
 description: "Something"
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 10.0.0+48 #Recuerda el archivo de abajo
+version: 11.0.0+9 #Recuerda el archivo de abajo
 
 environment:
   sdk: '>=3.3.4 <4.0.0'

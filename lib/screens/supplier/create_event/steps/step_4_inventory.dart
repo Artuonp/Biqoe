@@ -381,6 +381,9 @@ class _PackageFormState extends State<_PackageForm> {
   String _selectedType = 'dated';
   List<Map<String, dynamic>> _availabilityList = [];
 
+  // Fecha de control (solo para paquetes fixed/flexible — solo visible al proveedor)
+  DateTime? _controlDate;
+
   // VARIABLES PARA CUOTAS MEJORADAS
   bool _hasInstallments = false;
   // Lista de porcentajes (ej: [50.0, 50.0] para 2 cuotas)
@@ -407,6 +410,13 @@ class _PackageFormState extends State<_PackageForm> {
 
       if (pkg['cuposDisponibles'] != null && pkg['cuposDisponibles'] > 0) {
         _stockController.text = pkg['cuposDisponibles'].toString();
+      }
+
+      // Cargar fecha de control si existe
+      if (pkg['fechaControl'] != null) {
+        try {
+          _controlDate = DateTime.parse(pkg['fechaControl'].toString());
+        } catch (_) {}
       }
 
       if (pkg['disponibilidad'] != null) {
@@ -519,14 +529,13 @@ class _PackageFormState extends State<_PackageForm> {
             ? int.tryParse(_stockController.text) ?? 0
             : 0,
         'disponibilidad': _selectedType == 'dated' ? _availabilityList : [],
-
-        // --- CORRECCIÓN AQUÍ: Guardar explícitamente la cantidad ---
+        // Fecha de control para el proveedor (paquetes sin fecha pública)
+        'fechaControl': (_selectedType != 'dated' && _controlDate != null)
+            ? _controlDate!.toIso8601String().split('T').first
+            : null,
         'tieneCuotas': _hasInstallments,
         'configuracionCuotas': _hasInstallments ? _installmentPercentages : [],
-        'cantidadCuotas': _hasInstallments
-            ? _installmentPercentages.length
-            : 1, // <--- ESTA LÍNEA FALTABA
-        // -----------------------------------------------------------
+        'cantidadCuotas': _hasInstallments ? _installmentPercentages.length : 1,
       };
 
       widget.onSave(newPkg);
@@ -813,6 +822,101 @@ class _PackageFormState extends State<_PackageForm> {
                     decoration: _inputDeco(
                         label: "Cupos disponibles", icon: Icons.people_alt),
                     validator: (v) => v!.isEmpty ? "Requerido" : null),
+              ],
+
+              // --- FECHA DE CONTROL (para fixed y flexible — solo control interno) ---
+              if (_selectedType != 'dated') ...[
+                const SizedBox(height: 15),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.amber.shade200)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        const Icon(Icons.event_note,
+                            color: Colors.amber, size: 18),
+                        const SizedBox(width: 8),
+                        Text('Fecha de control (opcional)',
+                            style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: Colors.amber[900])),
+                      ]),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Visible solo para ti. Permite organizar esta actividad en tu calendario sin que el cliente vea la fecha.',
+                        style: GoogleFonts.poppins(
+                            fontSize: 11, color: Colors.amber[800]),
+                      ),
+                      const SizedBox(height: 12),
+                      GestureDetector(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: _controlDate ?? DateTime.now(),
+                            firstDate: DateTime(2024),
+                            lastDate: DateTime(2030),
+                            builder: (ctx, child) => Theme(
+                              data: Theme.of(ctx).copyWith(
+                                colorScheme: const ColorScheme.light(
+                                    primary: kPrimaryColor),
+                              ),
+                              child: child!,
+                            ),
+                          );
+                          if (picked != null) {
+                            setState(() => _controlDate = picked);
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                  color: _controlDate != null
+                                      ? Colors.amber.shade400
+                                      : Colors.grey.shade300)),
+                          child: Row(
+                            children: [
+                              Icon(Icons.calendar_today,
+                                  size: 16,
+                                  color: _controlDate != null
+                                      ? Colors.amber[700]
+                                      : Colors.grey),
+                              const SizedBox(width: 10),
+                              Text(
+                                _controlDate != null
+                                    ? DateFormat('EEEE d MMMM yyyy', 'es')
+                                        .format(_controlDate!)
+                                        .capitalize()
+                                    : 'Seleccionar fecha de control',
+                                style: GoogleFonts.poppins(
+                                    fontSize: 13,
+                                    color: _controlDate != null
+                                        ? Colors.black87
+                                        : Colors.grey[500]),
+                              ),
+                              const Spacer(),
+                              if (_controlDate != null)
+                                GestureDetector(
+                                  onTap: () =>
+                                      setState(() => _controlDate = null),
+                                  child: const Icon(Icons.close,
+                                      size: 16, color: Colors.grey),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
 
               // --- GESTIÓN DE FECHAS ---

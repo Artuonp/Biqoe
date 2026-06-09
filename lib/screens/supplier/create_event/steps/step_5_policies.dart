@@ -59,9 +59,8 @@ class _Step5PoliciesState extends State<Step5Policies> {
     try {
       final box =
           _savedMethodsBox ?? await Hive.openBox('saved_payment_methods');
-      // Usamos la combinación método+correo/teléfono como clave única para evitar duplicados
       final key =
-          '${method['metodo']}_${method['correo'] ?? method['telefono'] ?? 'cash'}';
+          '${method['metodo']}_${method['correo'] ?? method['telefono'] ?? method['numeroCuenta'] ?? 'cash'}';
       await box.put(key, method);
       final loaded =
           box.values.map((e) => Map<String, dynamic>.from(e as Map)).toList();
@@ -76,7 +75,7 @@ class _Step5PoliciesState extends State<Step5Policies> {
       final box =
           _savedMethodsBox ?? await Hive.openBox('saved_payment_methods');
       final key =
-          '${method['metodo']}_${method['correo'] ?? method['telefono'] ?? 'cash'}';
+          '${method['metodo']}_${method['correo'] ?? method['telefono'] ?? method['numeroCuenta'] ?? 'cash'}';
       await box.delete(key);
       final loaded =
           box.values.map((e) => Map<String, dynamic>.from(e as Map)).toList();
@@ -286,8 +285,13 @@ class _Step5PoliciesState extends State<Step5Policies> {
                   details = "${method['correo']} (${method['titular']})";
                 } else if (method['metodo'] == 'Pago móvil') {
                   details = "${method['banco']} - ${method['telefono']}";
+                } else if (method['metodo'] == 'Transferencia') {
+                  details =
+                      "${method['banco']} · Cta: ${method['numeroCuenta'] ?? ''} · ${method['titular'] ?? ''}";
                 } else if (method['metodo'] == 'Efectivo') {
                   details = "Pago presencial";
+                } else if (method['metodo'] == 'Gratis') {
+                  details = "Sin costo para el cliente";
                 } else {
                   details = "Ver detalles";
                 }
@@ -475,17 +479,33 @@ class _PaymentFormState extends State<_PaymentForm>
 
   // Controllers
   final _titularCtrl = TextEditingController();
-  final _idCtrl = TextEditingController();
+  final _idCtrl = TextEditingController(); // cédula/RIF/nro. documento
   final _phoneCtrl = TextEditingController();
   final _bankCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
+  final _accountNumberCtrl = TextEditingController(); // nro. cuenta
 
   bool _saveForFuture = true;
+
+  // Métodos sin datos de cuenta (solo 1 entrada por tipo)
+  static const List<String> _singleEntryMethods = ['Efectivo', 'Gratis'];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _titularCtrl.dispose();
+    _idCtrl.dispose();
+    _phoneCtrl.dispose();
+    _bankCtrl.dispose();
+    _emailCtrl.dispose();
+    _accountNumberCtrl.dispose();
+    _tabController.dispose();
+    super.dispose();
   }
 
   InputDecoration _deco(String label, {IconData? icon}) {
@@ -497,271 +517,378 @@ class _PaymentFormState extends State<_PaymentForm>
     );
   }
 
+  void _clearFields() {
+    _titularCtrl.clear();
+    _idCtrl.clear();
+    _phoneCtrl.clear();
+    _bankCtrl.clear();
+    _emailCtrl.clear();
+    _accountNumberCtrl.clear();
+  }
+
   void _submitNew() {
     if (_formKey.currentState!.validate()) {
       Map<String, dynamic> data = {'metodo': _selectedMethod};
 
       if (_selectedMethod == 'Pago móvil') {
         data.addAll({
-          'banco': _bankCtrl.text,
-          'telefono': _phoneCtrl.text,
-          'cedula': _idCtrl.text,
+          'banco': _bankCtrl.text.trim(),
+          'telefono': _phoneCtrl.text.trim(),
+          'cedula': _idCtrl.text.trim(),
+        });
+      } else if (_selectedMethod == 'Transferencia') {
+        data.addAll({
+          'banco': _bankCtrl.text.trim(),
+          'numeroCuenta': _accountNumberCtrl.text.trim(),
+          'documento': _idCtrl.text.trim(),
+          'titular': _titularCtrl.text.trim(),
         });
       } else if (['Zelle', 'Zinli', 'Binance'].contains(_selectedMethod)) {
         data.addAll({
-          'correo': _emailCtrl.text,
-          'titular': _titularCtrl.text,
+          'correo': _emailCtrl.text.trim(),
+          'titular': _titularCtrl.text.trim(),
         });
       }
+      // Efectivo y Gratis no tienen datos extra
 
-      widget.onAdd(data, _saveForFuture);
+      widget.onAdd(data,
+          _saveForFuture && !_singleEntryMethods.contains(_selectedMethod));
+      _clearFields();
       Navigator.pop(context);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // TEMA FORZADO PARA QUITAR MORADO EN TABS Y DROPDOWN
     return Theme(
       data: Theme.of(context).copyWith(
         primaryColor: kPrimaryColor,
         colorScheme: const ColorScheme.light(
             primary: kPrimaryColor, onPrimary: Colors.white),
-        canvasColor: Colors.white, // Fondo del dropdown
+        canvasColor: Colors.white,
       ),
       child: Padding(
         padding: EdgeInsets.only(
             bottom: MediaQuery.of(context).viewInsets.bottom + 20, top: 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // HEADER TABS (DISEÑO MEJORADO)
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20),
-              decoration: BoxDecoration(
-                  color: const Color.fromARGB(255, 255, 255, 255),
-                  borderRadius: BorderRadius.circular(12)),
-              child: TabBar(
-                controller: _tabController,
-                indicatorPadding: const EdgeInsets.all(4),
-                labelColor: kPrimaryColor,
-                unselectedLabelColor: const Color.fromARGB(179, 79, 79, 79),
-                labelStyle: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                tabs: const [
-                  Tab(text: "Nueva cuenta"),
-                  Tab(text: "Mis guardadas")
-                ],
-              ),
-            ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Altura disponible: pantalla menos teclado menos padding del modal
+            final screenH = MediaQuery.of(context).size.height;
+            final keyboardH = MediaQuery.of(context).viewInsets.bottom;
+            final tabViewH = (screenH - keyboardH - 130).clamp(320.0, 520.0);
 
-            SizedBox(
-              height: 420, // Altura fija suficiente para scroll
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  // --- TAB 1: NUEVA CUENTA ---
-                  SingleChildScrollView(
-                    padding: const EdgeInsets.all(20),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        children: [
-                          DropdownButtonFormField<String>(
-                            initialValue: _selectedMethod,
-                            decoration: _deco("Tipo"),
-                            items: [
-                              'Pago móvil',
-                              'Zelle',
-                              'Zinli',
-                              'Binance',
-                              'Efectivo'
-                            ]
-                                .map((e) =>
-                                    DropdownMenuItem(value: e, child: Text(e)))
-                                .toList(),
-                            onChanged: (v) =>
-                                setState(() => _selectedMethod = v!),
-                          ),
-                          const SizedBox(height: 15),
-
-                          // CAMPOS DINÁMICOS
-                          if (_selectedMethod == 'Pago móvil') ...[
-                            TextFormField(
-                                controller: _bankCtrl,
-                                decoration:
-                                    _deco("Banco", icon: Icons.account_balance),
-                                validator: (v) =>
-                                    v!.isEmpty ? 'Requerido' : null),
-                            const SizedBox(height: 10),
-                            TextFormField(
-                                controller: _phoneCtrl,
-                                decoration: _deco("Teléfono",
-                                    icon: Icons.phone_android),
-                                keyboardType: TextInputType.phone,
-                                validator: (v) =>
-                                    v!.isEmpty ? 'Requerido' : null),
-                            const SizedBox(height: 10),
-                            TextFormField(
-                                controller: _idCtrl,
-                                decoration:
-                                    _deco("Cédula / RIF", icon: Icons.badge),
-                                validator: (v) =>
-                                    v!.isEmpty ? 'Requerido' : null),
-                          ],
-
-                          // LÓGICA UNIFICADA PARA ZELLE, ZINLI Y BINANCE
-                          if (['Zelle', 'Zinli', 'Binance']
-                              .contains(_selectedMethod)) ...[
-                            TextFormField(
-                                controller: _emailCtrl,
-                                decoration: _deco("Correo electrónico",
-                                    icon: Icons.email),
-                                keyboardType: TextInputType.emailAddress,
-                                validator: (v) =>
-                                    v!.isEmpty ? 'Requerido' : null),
-                            const SizedBox(height: 10),
-                            TextFormField(
-                                controller: _titularCtrl,
-                                decoration: _deco("Nombre", icon: Icons.person),
-                                validator: (v) =>
-                                    v!.isEmpty ? 'Requerido' : null),
-                          ],
-
-                          if (_selectedMethod == 'Efectivo')
-                            const Padding(
-                              padding: EdgeInsets.all(10),
-                              child: Text(
-                                  "El pago se acordará directamente en el lugar.",
-                                  style: TextStyle(color: Colors.grey)),
-                            ),
-
-                          const SizedBox(height: 20),
-
-                          // CHECKBOX GUARDAR
-                          if (_selectedMethod != 'Efectivo')
-                            Container(
-                              decoration: BoxDecoration(
-                                  color: kPrimaryColor.withValues(alpha: 0.05),
-                                  borderRadius: BorderRadius.circular(8)),
-                              child: CheckboxListTile(
-                                value: _saveForFuture,
-                                activeColor: kPrimaryColor,
-                                title: Text("Guardar en mi perfil",
-                                    style: GoogleFonts.poppins(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600)),
-                                subtitle: Text("Para no escribirlo de nuevo",
-                                    style: GoogleFonts.poppins(fontSize: 11)),
-                                onChanged: (v) =>
-                                    setState(() => _saveForFuture = v!),
-                              ),
-                            ),
-
-                          const SizedBox(height: 20),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                  backgroundColor: kPrimaryColor,
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 12)),
-                              onPressed: _submitNew,
-                              child: const Text("Agregar método",
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold)),
-                            ),
-                          )
-                        ],
-                      ),
-                    ),
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 20),
+                  decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12)),
+                  child: TabBar(
+                    controller: _tabController,
+                    indicatorPadding: const EdgeInsets.all(4),
+                    labelColor: kPrimaryColor,
+                    unselectedLabelColor: const Color.fromARGB(179, 79, 79, 79),
+                    labelStyle:
+                        GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                    tabs: const [
+                      Tab(text: "Nueva cuenta"),
+                      Tab(text: "Mis guardadas"),
+                    ],
                   ),
-
-                  // --- TAB 2: GUARDADAS ---
-                  widget.savedMethods.isEmpty
-                      ? Center(
+                ),
+                SizedBox(
+                  height: tabViewH,
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      // ── TAB 1: NUEVA CUENTA ───────────────────────────────────
+                      SingleChildScrollView(
+                        padding: const EdgeInsets.all(20),
+                        child: Form(
+                          key: _formKey,
                           child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.bookmark_border,
-                                size: 50, color: Colors.grey[300]),
-                            const SizedBox(height: 10),
-                            Text("No tienes cuentas guardadas",
-                                style: GoogleFonts.poppins(color: Colors.grey)),
-                            const SizedBox(height: 6),
-                            Text(
-                              "Marca \"Guardar en mi perfil\" al agregar\nuna cuenta nueva.",
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.poppins(
-                                  fontSize: 11, color: Colors.grey[400]),
-                            ),
-                          ],
-                        ))
-                      : ListView.builder(
-                          padding: const EdgeInsets.all(20),
-                          itemCount: widget.savedMethods.length,
-                          itemBuilder: (context, index) {
-                            final saved = widget.savedMethods[index];
-                            final subtitle = saved['metodo'] == 'Pago móvil'
-                                ? '${saved['banco']} · ${saved['telefono']}'
-                                : saved['correo'] ?? '';
-                            return Card(
-                              elevation: 0,
-                              color: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  side:
-                                      BorderSide(color: Colors.grey.shade200)),
-                              margin: const EdgeInsets.only(bottom: 10),
-                              child: ListTile(
-                                leading:
-                                    Icon(Icons.bookmark, color: kPrimaryColor),
-                                title: Text(saved['metodo'],
-                                    style: GoogleFonts.poppins(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14)),
-                                subtitle: Text(subtitle,
-                                    style: GoogleFonts.poppins(
-                                        fontSize: 12, color: Colors.grey[600])),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    // Botón "Usar"
-                                    ElevatedButton(
-                                      style: ElevatedButton.styleFrom(
-                                          backgroundColor: kPrimaryColor,
-                                          shape: const StadiumBorder(),
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 12, vertical: 6)),
-                                      onPressed: () {
-                                        widget.onAdd(saved, false);
-                                        Navigator.pop(context);
-                                      },
-                                      child: const Text("Usar",
-                                          style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12)),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    // Botón eliminar
-                                    IconButton(
-                                      icon: const Icon(Icons.close,
-                                          color: Colors.red, size: 18),
-                                      tooltip: 'Eliminar guardado',
-                                      onPressed: () =>
-                                          widget.onDeleteSaved(saved),
-                                    ),
-                                  ],
-                                ),
+                            children: [
+                              // Selector de método
+                              DropdownButtonFormField<String>(
+                                initialValue: _selectedMethod,
+                                decoration: _deco("Tipo de pago"),
+                                items: [
+                                  'Pago móvil',
+                                  'Transferencia',
+                                  'Zelle',
+                                  'Zinli',
+                                  'Binance',
+                                  'Efectivo',
+                                  'Gratis',
+                                ]
+                                    .map((e) => DropdownMenuItem(
+                                        value: e, child: Text(e)))
+                                    .toList(),
+                                onChanged: (v) => setState(() {
+                                  _selectedMethod = v!;
+                                  _clearFields();
+                                }),
                               ),
-                            );
-                          },
+                              const SizedBox(height: 15),
+
+                              // ── Pago móvil ────────────────────────────────────
+                              if (_selectedMethod == 'Pago móvil') ...[
+                                TextFormField(
+                                    controller: _bankCtrl,
+                                    decoration: _deco("Banco",
+                                        icon: Icons.account_balance),
+                                    validator: (v) =>
+                                        v!.isEmpty ? 'Requerido' : null),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                    controller: _phoneCtrl,
+                                    decoration: _deco("Teléfono",
+                                        icon: Icons.phone_android),
+                                    keyboardType: TextInputType.phone,
+                                    validator: (v) =>
+                                        v!.isEmpty ? 'Requerido' : null),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                    controller: _idCtrl,
+                                    decoration: _deco("Cédula / RIF",
+                                        icon: Icons.badge),
+                                    validator: (v) =>
+                                        v!.isEmpty ? 'Requerido' : null),
+                              ],
+
+                              // ── Transferencia bancaria ─────────────────────────
+                              if (_selectedMethod == 'Transferencia') ...[
+                                TextFormField(
+                                    controller: _bankCtrl,
+                                    decoration: _deco("Banco",
+                                        icon: Icons.account_balance),
+                                    validator: (v) =>
+                                        v!.isEmpty ? 'Requerido' : null),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                    controller: _accountNumberCtrl,
+                                    decoration: _deco("Número de cuenta",
+                                        icon: Icons.credit_card),
+                                    keyboardType: TextInputType.number,
+                                    validator: (v) =>
+                                        v!.isEmpty ? 'Requerido' : null),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                    controller: _idCtrl,
+                                    decoration: _deco(
+                                        "Número de documento (Cédula/RIF)",
+                                        icon: Icons.badge),
+                                    validator: (v) =>
+                                        v!.isEmpty ? 'Requerido' : null),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                    controller: _titularCtrl,
+                                    decoration: _deco("Nombre del titular",
+                                        icon: Icons.person),
+                                    validator: (v) =>
+                                        v!.isEmpty ? 'Requerido' : null),
+                              ],
+
+                              // ── Zelle / Zinli / Binance ───────────────────────
+                              if (['Zelle', 'Zinli', 'Binance']
+                                  .contains(_selectedMethod)) ...[
+                                TextFormField(
+                                    controller: _emailCtrl,
+                                    decoration: _deco("Correo electrónico",
+                                        icon: Icons.email),
+                                    keyboardType: TextInputType.emailAddress,
+                                    validator: (v) =>
+                                        v!.isEmpty ? 'Requerido' : null),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                    controller: _titularCtrl,
+                                    decoration:
+                                        _deco("Nombre", icon: Icons.person),
+                                    validator: (v) =>
+                                        v!.isEmpty ? 'Requerido' : null),
+                              ],
+
+                              // ── Efectivo ──────────────────────────────────────
+                              if (_selectedMethod == 'Efectivo')
+                                const Padding(
+                                  padding: EdgeInsets.all(10),
+                                  child: Text(
+                                      "El pago se acordará directamente en el lugar.",
+                                      style: TextStyle(color: Colors.grey)),
+                                ),
+
+                              // ── Gratis ────────────────────────────────────────
+                              if (_selectedMethod == 'Gratis')
+                                Container(
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                      color:
+                                          Colors.green.withValues(alpha: 0.06),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                          color: Colors.green
+                                              .withValues(alpha: 0.25))),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.card_giftcard,
+                                          color: Colors.green),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          "La actividad no tiene costo. El cliente podrá reservar sin pagar.",
+                                          style: GoogleFonts.poppins(
+                                              fontSize: 12,
+                                              color: Colors.green[800]),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                              const SizedBox(height: 20),
+
+                              // Guardar en perfil (solo para métodos con datos)
+                              if (!_singleEntryMethods
+                                  .contains(_selectedMethod))
+                                Container(
+                                  decoration: BoxDecoration(
+                                      color:
+                                          kPrimaryColor.withValues(alpha: 0.05),
+                                      borderRadius: BorderRadius.circular(8)),
+                                  child: CheckboxListTile(
+                                    value: _saveForFuture,
+                                    activeColor: kPrimaryColor,
+                                    title: Text("Guardar en mi perfil",
+                                        style: GoogleFonts.poppins(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600)),
+                                    subtitle: Text(
+                                        "Para no escribirlo de nuevo",
+                                        style:
+                                            GoogleFonts.poppins(fontSize: 11)),
+                                    onChanged: (v) =>
+                                        setState(() => _saveForFuture = v!),
+                                  ),
+                                ),
+
+                              const SizedBox(height: 20),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                      backgroundColor: kPrimaryColor,
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 12)),
+                                  onPressed: _submitNew,
+                                  child: const Text("Agregar método",
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold)),
+                                ),
+                              )
+                            ],
+                          ),
                         ),
-                ],
-              ),
-            )
-          ],
-        ),
+                      ),
+
+                      // ── TAB 2: GUARDADAS ──────────────────────────────────────
+                      widget.savedMethods.isEmpty
+                          ? Center(
+                              child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.bookmark_border,
+                                    size: 50, color: Colors.grey[300]),
+                                const SizedBox(height: 10),
+                                Text("No tienes cuentas guardadas",
+                                    style: GoogleFonts.poppins(
+                                        color: Colors.grey)),
+                                const SizedBox(height: 6),
+                                Text(
+                                  "Marca \"Guardar en mi perfil\" al agregar\nuna cuenta nueva.",
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 11, color: Colors.grey[400]),
+                                ),
+                              ],
+                            ))
+                          : ListView.builder(
+                              padding: const EdgeInsets.all(20),
+                              itemCount: widget.savedMethods.length,
+                              itemBuilder: (context, index) {
+                                final saved = widget.savedMethods[index];
+                                String subtitle = '';
+                                if (saved['metodo'] == 'Pago móvil') {
+                                  subtitle =
+                                      '${saved['banco']} · ${saved['telefono']}';
+                                } else if (saved['metodo'] == 'Transferencia') {
+                                  subtitle =
+                                      '${saved['banco']} · ${saved['numeroCuenta'] ?? ''}';
+                                } else {
+                                  subtitle = saved['correo'] ?? '';
+                                }
+                                return Card(
+                                  elevation: 0,
+                                  color: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      side: BorderSide(
+                                          color: Colors.grey.shade200)),
+                                  margin: const EdgeInsets.only(bottom: 10),
+                                  child: ListTile(
+                                    leading: Icon(Icons.bookmark,
+                                        color: kPrimaryColor),
+                                    title: Text(saved['metodo'],
+                                        style: GoogleFonts.poppins(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14)),
+                                    subtitle: Text(subtitle,
+                                        style: GoogleFonts.poppins(
+                                            fontSize: 12,
+                                            color: Colors.grey[600])),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                              backgroundColor: kPrimaryColor,
+                                              shape: const StadiumBorder(),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 6)),
+                                          onPressed: () {
+                                            widget.onAdd(saved, false);
+                                            Navigator.pop(context);
+                                          },
+                                          child: const Text("Usar",
+                                              style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12)),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        IconButton(
+                                          icon: const Icon(Icons.close,
+                                              color: Colors.red, size: 18),
+                                          tooltip: 'Eliminar guardado',
+                                          onPressed: () =>
+                                              widget.onDeleteSaved(saved),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ],
+                  ),
+                ),
+              ],
+            ); // end Column
+          }, // end LayoutBuilder builder
+        ), // end LayoutBuilder
       ),
     );
   }

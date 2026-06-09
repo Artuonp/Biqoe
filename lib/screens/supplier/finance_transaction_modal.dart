@@ -36,7 +36,6 @@ class _FinTransactionModalState extends State<FinTransactionModal>
   final _notesCtrl = TextEditingController();
 
   late String _type; // 'income' | 'expense' | 'internal'
-  TxStatus _status = TxStatus.pending;
   String _category = 'Operativo';
   String _subcategory = '';
   DateTime _selectedDate = DateTime.now();
@@ -81,7 +80,6 @@ class _FinTransactionModalState extends State<FinTransactionModal>
       _amountCtrl.text = e['monto']?.toString() ?? '';
       _notesCtrl.text = e['notas']?.toString() ?? '';
       _type = e['type'] ?? 'expense';
-      _status = TxStatusExt.fromString(e['estado']);
       _category = e['categoria'] ?? _categoriesByType[_type]!.first;
       _subcategory = e['subcategoria'] ?? '';
       _selectedDate = parseFinanceDate(e['fecha']);
@@ -114,14 +112,14 @@ class _FinTransactionModalState extends State<FinTransactionModal>
         'descripcion': _descCtrl.text.trim(),
         'categoria': _category,
         'subcategoria': _subcategory,
-        'estado': _status.name,
+        'estado': 'confirmed', // fijo — ya no se gestiona manualmente
         'notas': _notesCtrl.text.trim(),
         'fecha': Timestamp.fromDate(_selectedDate),
         'destinationId': _selectedDestinationId,
         'walletId': _selectedWalletId,
         'toWalletId': _type == 'internal' ? _toWalletId : null,
         'updatedAt': FieldValue.serverTimestamp(),
-        'source': 'manual', // distingue de reservas automáticas
+        'source': 'manual',
       };
 
       if (widget.txToEdit != null) {
@@ -251,12 +249,8 @@ class _FinTransactionModalState extends State<FinTransactionModal>
               ),
               const SizedBox(height: 14),
 
-              // CATEGORÍA
-              Row(children: [
-                Expanded(child: _buildCategoryDropdown()),
-                const SizedBox(width: 12),
-                Expanded(child: _buildStatusDropdown()),
-              ]),
+              // CATEGORÍA (solo — se elimina el dropdown de Estado)
+              _buildCategoryDropdown(),
               const SizedBox(height: 14),
 
               // ACTIVIDAD (si no es movimiento interno)
@@ -381,29 +375,6 @@ class _FinTransactionModalState extends State<FinTransactionModal>
               value: c, child: Text(c, overflow: TextOverflow.ellipsis)))
           .toList(),
       onChanged: (v) => setState(() => _category = v!),
-    );
-  }
-
-  Widget _buildStatusDropdown() {
-    return DropdownButtonFormField<TxStatus>(
-      initialValue: _status,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: 'Estado',
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        prefixIcon: Icon(_status.icon, size: 18, color: _status.color),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      ),
-      items: TxStatus.values
-          .map((s) => DropdownMenuItem(
-                value: s,
-                child: Text(s.label,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.poppins(fontSize: 13, color: s.color)),
-              ))
-          .toList(),
-      onChanged: (v) => setState(() => _status = v!),
     );
   }
 

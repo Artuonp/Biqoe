@@ -94,24 +94,26 @@ class _ManifestScreenState extends State<ManifestScreen>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => _SimpleScannerPage(
-          onDetect: (String code) => _processScannedCode(code),
+        builder: (_) => _SimpleScannerPage(
+          // El escáner ya hace su propio Navigator.pop antes de llamar a onDetect.
+          // Aquí NO hacemos ningún pop extra: solo procesamos el código.
+          onDetect: _processScannedCode,
         ),
       ),
     );
   }
 
   Future<void> _processScannedCode(String code) async {
-    // Cerrar el escáner inmediatamente
-    Navigator.pop(context);
-
     // Mostrar loading
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Procesando código")),
+      const SnackBar(
+        content: Text("Procesando código…"),
+        duration: Duration(seconds: 1),
+      ),
     );
 
     try {
-      // Buscar la reserva por código Y por nombre del plan (para seguridad)
       final querySnapshot = await FirebaseFirestore.instance
           .collection('reservaciones')
           .doc(widget.supplierId)
@@ -121,6 +123,8 @@ class _ManifestScreenState extends State<ManifestScreen>
           .limit(1)
           .get();
 
+      if (!mounted) return;
+
       if (querySnapshot.docs.isEmpty) {
         _showMsg("Código no encontrado en esta actividad", isError: true);
         return;
@@ -129,25 +133,92 @@ class _ManifestScreenState extends State<ManifestScreen>
       final doc = querySnapshot.docs.first;
       final data = doc.data();
 
-      // Validar si está verificada la reserva
+      // Validar pago verificado
       if (data['estado'] != 'verificado') {
         _showMsg("Esta reserva no está verificada aún.", isError: true);
         return;
       }
 
-      // Validar si ya está presente
-      if (data['isCheckedIn'] == true) {
-        _showMsg("El pasajero ${data['name']} YA está presente.",
-            isError: false);
+      final bool isCheckedIn = data['isCheckedIn'] == true;
+
+      if (isCheckedIn) {
+        // Ya fue escaneado — advertencia clara
+        _showAlreadyCheckedInWarning(data['name'] ?? 'el cliente', code);
       } else {
-        // Marcar como presente
-        await doc.reference.update(
-            {'isCheckedIn': true, 'checkInTime': FieldValue.serverTimestamp()});
-        _showMsg("¡Bienvenido/a ${data['name']}! Check-in exitoso.");
+        // Primera vez — marcar entrada y guardar timestamp
+        await doc.reference.update({
+          'isCheckedIn': true,
+          'checkInTime': FieldValue.serverTimestamp(),
+        });
+        _showMsg("¡Bienvenido/a ${data['name']}! ✓ Check-in registrado.");
       }
     } catch (e) {
-      _showMsg("Error al procesar código: $e", isError: true);
+      if (mounted) _showMsg("Error al procesar código: $e", isError: true);
     }
+  }
+
+  void _showAlreadyCheckedInWarning(String name, String code) {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        icon: const Icon(Icons.warning_amber_rounded,
+            color: Colors.orange, size: 48),
+        title: Text('¡Código ya utilizado!',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.poppins(
+                fontWeight: FontWeight.bold,
+                color: Colors.orange[800],
+                fontSize: 18)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'El código de $name ya fue escaneado anteriormente.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(fontSize: 14),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border:
+                      Border.all(color: Colors.orange.withValues(alpha: 0.4))),
+              child: Text(
+                'Código: $code',
+                style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'No se permite el doble ingreso con el mismo QR.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange[700],
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10))),
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Entendido',
+                  style: GoogleFonts.poppins(
+                      color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showMsg(String msg, {bool isError = false}) {
@@ -187,7 +258,7 @@ class _ManifestScreenState extends State<ManifestScreen>
                   child: pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
-                        pw.Text("Manifiesto de Pasajeros",
+                        pw.Text("Asistentes",
                             style: pw.TextStyle(
                                 fontSize: 24, fontWeight: pw.FontWeight.bold)),
                         pw.Text("Biqoe",
@@ -594,6 +665,35 @@ class _PassengerCard extends StatelessWidget {
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // ── Insignia QR escaneado (verde, permanente) ──────────
+                  if (isCheckedIn)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 3),
+                      decoration: BoxDecoration(
+                          color: Colors.green.withAlpha((0.12 * 255).round()),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                              color:
+                                  Colors.green.withAlpha((0.4 * 255).round()),
+                              width: 1)),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.qr_code,
+                              color: Colors.green, size: 18),
+                          Text(
+                            'Escaneado',
+                            style: GoogleFonts.poppins(
+                                fontSize: 8,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green[700]),
+                          ),
+                        ],
+                      ),
+                    ),
+
                   // Ícono ? — visible siempre que haya al menos una respuesta
                   if (answers.isNotEmpty)
                     GestureDetector(
@@ -771,30 +871,83 @@ class _PassengerCard extends StatelessWidget {
   }
 }
 
-// --- PANTALLA SIMPLE DE ESCÁNER ---
-class _SimpleScannerPage extends StatelessWidget {
+// --- PANTALLA DE ESCÁNER (StatefulWidget con debounce) ---
+class _SimpleScannerPage extends StatefulWidget {
   final Function(String) onDetect;
 
   const _SimpleScannerPage({required this.onDetect});
 
   @override
+  State<_SimpleScannerPage> createState() => _SimpleScannerPageState();
+}
+
+class _SimpleScannerPageState extends State<_SimpleScannerPage> {
+  bool _processed = false; // evita disparar múltiples veces
+  final MobileScannerController _controller = MobileScannerController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Escanear código QR"),
+        title: Text('Escanear código QR',
+            style: GoogleFonts.poppins(color: Colors.white)),
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.flash_on),
+            tooltip: 'Linterna',
+            onPressed: () => _controller.toggleTorch(),
+          ),
+        ],
       ),
-      body: MobileScanner(
-        onDetect: (capture) {
-          final List<Barcode> barcodes = capture.barcodes;
-          for (final barcode in barcodes) {
-            if (barcode.rawValue != null) {
-              onDetect(barcode.rawValue!);
-              break; // Solo procesamos el primero
-            }
-          }
-        },
+      body: Stack(
+        children: [
+          MobileScanner(
+            controller: _controller,
+            onDetect: (capture) {
+              if (_processed) return; // ya procesamos, ignorar
+              final barcodes = capture.barcodes;
+              for (final barcode in barcodes) {
+                if (barcode.rawValue != null) {
+                  _processed = true;
+                  _controller.stop();
+                  // Primero cerramos esta pantalla, LUEGO llamamos onDetect
+                  Navigator.pop(context);
+                  widget.onDetect(barcode.rawValue!);
+                  break;
+                }
+              }
+            },
+          ),
+          // Overlay visual — recuadro de escaneo centrado
+          Center(
+            child: Container(
+              width: 220,
+              height: 220,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.white, width: 2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 40,
+            left: 0,
+            right: 0,
+            child: Text(
+              'Enfoca el código QR dentro del recuadro',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(color: Colors.white, fontSize: 13),
+            ),
+          ),
+        ],
       ),
     );
   }

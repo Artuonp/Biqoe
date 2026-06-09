@@ -6,6 +6,10 @@
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Biqoe App">
 
+  <!-- Viewport responsivo — esencial para que la app se vea bien en desktop y móvil -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+  <!-- iOS Web App -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="biqoe">
@@ -14,19 +18,34 @@
   <link rel="icon" type="image/png" href="favicon.png">
   <title>biqoe</title>
   <link rel="manifest" href="manifest.json">
-  
+
+  <style>
+    /* Fondo mientras carga Flutter — mismo color que la app */
+    html, body {
+      background-color: #F3F7FE;
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+    }
+  </style>
+
   <script src="flutter.js" defer></script>
 </head>
-<body style="background-color: #F3F7FE; margin: 0; padding: 0;">
+<body>
   <script>
     window.addEventListener('load', function() {
-      // Cargador limpio: SIN Service Worker. 
-      // Esto elimina el bug de Android y evita que Safari bloquee la carga.
       _flutter.loader.loadEntrypoint({
         onEntrypointLoaded: function(engineInitializer) {
-          // Forzamos HTML para compatibilidad total con móviles
           engineInitializer.initializeEngine({
-            renderer: "html"
+            // canvaskit: mejor rendimiento en desktop (Chrome, Firefox, Edge, macOS Safari).
+            // html: era necesario para compatibilidad con móviles antiguos pero está
+            //       deprecated en Flutter 3.22+. canvaskit funciona en todos los browsers
+            //       modernos incluyendo Safari iOS 15+ y Safari macOS.
+            // Si experimentas problemas visuales en algún dispositivo antiguo,
+            // puedes volver a "html" temporalmente.
+            renderer: "canvaskit"
           }).then(function(appRunner) {
             appRunner.runApp();
           });

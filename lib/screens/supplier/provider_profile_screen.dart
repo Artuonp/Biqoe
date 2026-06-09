@@ -1197,269 +1197,341 @@ class _ProviderProfileScreenState extends State<ProviderProfileScreen> {
     );
   }
 
-  // --- LISTA DE ACTIVIDADES (USANDO HTTP) ---
+  // --- LISTA DE ACTIVIDADES CON SECCIONES ---
   Widget _buildProviderActivities(double screenWidth, String providerId) {
     try {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 25),
-            child: Row(
-              children: [
-                Container(
-                    width: 4,
-                    height: 24,
-                    decoration: BoxDecoration(
-                        color: primaryColor,
-                        borderRadius: BorderRadius.circular(2))),
-                const SizedBox(width: 10),
-                Text("Actividades disponibles",
-                    style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey[800])),
-              ],
-            ),
-          ),
-          const SizedBox(height: 15),
-          FutureBuilder<List<Map<String, dynamic>>>(
-            future: _getActivitiesBySupplierViaRest(providerId),
-            builder: (context, snapshot) {
-              try {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                      child: Padding(
-                          padding: EdgeInsets.all(20),
-                          child: CircularProgressIndicator()));
-                }
-                if (snapshot.hasError) {
-                  return Center(
-                    child:
-                        Text('Error al cargar actividades: ${snapshot.error}'),
-                  );
-                }
-                final activities = snapshot.data ?? [];
-                if (activities.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 40, horizontal: 30),
-                    child: Center(
-                      child: Column(
-                        children: [
-                          Icon(HugeIcons.strokeRoundedTicket01,
-                              size: 40, color: Colors.grey[300]),
-                          const SizedBox(height: 10),
-                          Text("No hay actividades activas.",
-                              style: TextStyle(
-                                  fontFamily: 'Poppins',
-                                  color: Colors.grey[400])),
-                        ],
-                      ),
-                    ),
-                  );
-                }
-
-                return LayoutBuilder(
-                  builder: (context, constraints) {
-                    // En pantallas grandes usamos 2 columnas; en móvil, 1
-                    final bool useGrid = constraints.maxWidth > 500;
-                    if (useGrid) {
-                      return GridView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 16,
-                          mainAxisSpacing: 16,
-                          childAspectRatio: 1.1,
-                        ),
-                        itemCount: activities.length,
-                        itemBuilder: (context, index) {
-                          try {
-                            final data = activities[index];
-                            double minPrice = 0.0;
-                            final rawPaquetes = data['paquetes'];
-                            if (rawPaquetes is List) {
-                              List<double> precios = [];
-                              for (var p in rawPaquetes) {
-                                if (p is Map && p['precio'] != null) {
-                                  var val = p['precio'];
-                                  if (val is num) {
-                                    precios.add(val.toDouble());
-                                  } else if (val is String) {
-                                    precios.add(double.tryParse(val) ?? 0.0);
-                                  }
-                                }
-                              }
-                              if (precios.isNotEmpty) {
-                                minPrice =
-                                    precios.reduce((a, b) => a < b ? a : b);
-                              }
-                            }
-                            String displayImage = '';
-                            final rawImagenes = data['imagenes'];
-                            final rawImagen = data['imagen'];
-                            if (rawImagenes is List && rawImagenes.isNotEmpty) {
-                              displayImage = rawImagenes[0].toString();
-                            } else if (rawImagen is String) {
-                              displayImage = rawImagen;
-                            } else if (rawImagen is List &&
-                                rawImagen.isNotEmpty) {
-                              displayImage = rawImagen[0].toString();
-                            }
-                            return GestureDetector(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        DestinationDetailScreen(
-                                      destinationId: data['id'] ?? '',
-                                      userId: widget.currentUserId,
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: ProviderActivityCard(
-                                imageUrl: displayImage,
-                                title: data['nombre']?.toString() ??
-                                    'Actividad sin nombre',
-                                location: data['lugar']?.toString() ??
-                                    (data['estado']?.toString() ?? ''),
-                                price: minPrice,
-                                currencySymbol:
-                                    data['divisa']?.toString() == 'eur'
-                                        ? '€'
-                                        : '\$',
-                              ),
-                            );
-                          } catch (e) {
-                            return Container(
-                              height: 100,
-                              color: Colors.red.shade100,
-                              child: Center(
-                                child: Text('Error: $e',
-                                    style: const TextStyle(color: Colors.red)),
-                              ),
-                            );
-                          }
-                        },
-                      );
-                    }
-                    // Mobile: lista vertical original
-                    return ListView.separated(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: activities.length,
-                      separatorBuilder: (context, index) =>
-                          const SizedBox(height: 20),
-                      itemBuilder: (context, index) {
-                        try {
-                          final data = activities[index];
-
-                          // Calcular precio mínimo desde paquetes
-                          double minPrice = 0.0;
-                          final rawPaquetes = data['paquetes'];
-                          if (rawPaquetes is List) {
-                            List<double> precios = [];
-                            for (var p in rawPaquetes) {
-                              if (p is Map && p['precio'] != null) {
-                                var val = p['precio'];
-                                if (val is num) {
-                                  precios.add(val.toDouble());
-                                } else if (val is String) {
-                                  precios.add(double.tryParse(val) ?? 0.0);
-                                }
-                              }
-                            }
-                            if (precios.isNotEmpty) {
-                              minPrice =
-                                  precios.reduce((a, b) => a < b ? a : b);
-                            }
-                          }
-
-                          // Obtener imagen de portada
-                          String displayImage = '';
-                          final rawImagenes = data['imagenes'];
-                          final rawImagen = data['imagen'];
-
-                          if (rawImagenes is List && rawImagenes.isNotEmpty) {
-                            displayImage = rawImagenes[0].toString();
-                          } else if (rawImagen is String) {
-                            displayImage = rawImagen;
-                          } else if (rawImagen is List &&
-                              rawImagen.isNotEmpty) {
-                            displayImage = rawImagen[0].toString();
-                          }
-
-                          return GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => DestinationDetailScreen(
-                                    destinationId:
-                                        data['id'] ?? '', // Pasamos solo el ID
-                                    userId: widget.currentUserId,
-                                  ),
-                                ),
-                              );
-                            },
-                            child: ProviderActivityCard(
-                              imageUrl: displayImage,
-                              title: data['nombre']?.toString() ??
-                                  'Actividad sin nombre',
-                              location: data['lugar']?.toString() ??
-                                  (data['estado']?.toString() ?? ''),
-                              price: minPrice,
-                              currencySymbol:
-                                  data['divisa']?.toString() == 'eur'
-                                      ? '€'
-                                      : '\$',
-                            ),
-                          );
-                        } catch (e, stack) {
-                          debugPrint('ERROR EN ITEM BUILDER: $e\n$stack');
-                          return Container(
-                            height: 100,
-                            color: Colors.red.shade100,
-                            child: Center(
-                              child: Text(
-                                'Error al mostrar actividad: $e',
-                                style: const TextStyle(color: Colors.red),
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                    );
-                  }, // end LayoutBuilder
-                );
-              } catch (e, stack) {
-                debugPrint('ERROR EN FUTUREBUILDER DE ACTIVIDADES: $e\n$stack');
-                return Center(
-                  child: Text('Error cargando actividades: $e'),
-                );
-              }
-            },
-          ),
-        ],
+      return _ActivitiesWithSections(
+        providerId: providerId,
+        currentUserId: widget.currentUserId,
+        getActivities: _getActivitiesBySupplierViaRest,
+        primaryColor: primaryColor,
       );
     } catch (e, stack) {
       debugPrint('ERROR EN _buildProviderActivities: $e\n$stack');
       return Center(
-        child: Text('Error cargando actividades: $e'),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Text('Error cargando actividades: $e'),
+        ),
       );
     }
   }
 }
 
-// --- TARJETA DE ACTIVIDAD (SIN CAMBIOS) ---
+// ─────────────────────────────────────────────────────────────────────────────
+// Widget autónomo que carga actividades y las muestra con filtro por sección
+// ─────────────────────────────────────────────────────────────────────────────
+class _ActivitiesWithSections extends StatefulWidget {
+  final String providerId;
+  final String currentUserId;
+  final Future<List<Map<String, dynamic>>> Function(String) getActivities;
+  final Color primaryColor;
+
+  const _ActivitiesWithSections({
+    required this.providerId,
+    required this.currentUserId,
+    required this.getActivities,
+    required this.primaryColor,
+  });
+
+  @override
+  State<_ActivitiesWithSections> createState() =>
+      _ActivitiesWithSectionsState();
+}
+
+class _ActivitiesWithSectionsState extends State<_ActivitiesWithSections> {
+  // null = "Todas"
+  String? _selectedSection;
+
+  // Helper: extrae precio mínimo
+  double _minPrice(Map<String, dynamic> data) {
+    final raw = data['paquetes'];
+    if (raw is! List) return 0.0;
+    final prices =
+        raw.whereType<Map>().where((p) => p['precio'] != null).map<double>((p) {
+      final v = p['precio'];
+      if (v is num) return v.toDouble();
+      return double.tryParse(v.toString()) ?? 0.0;
+    }).toList();
+    if (prices.isEmpty) return 0.0;
+    return prices.reduce((a, b) => a < b ? a : b);
+  }
+
+  // Helper: extrae imagen de portada
+  String _coverImage(Map<String, dynamic> data) {
+    final imgs = data['imagenes'];
+    if (imgs is List && imgs.isNotEmpty) return imgs[0].toString();
+    final img = data['imagen'];
+    if (img is List && img.isNotEmpty) return img[0].toString();
+    if (img is String) return img;
+    return '';
+  }
+
+  // Helper: si la actividad está oculta
+  bool _isHidden(Map<String, dynamic> data) {
+    if (data['ocultar'] == true) return true;
+    if (data['isPrivate'] == true) return true;
+    if (data['isInApp'] == false) return true;
+    return false;
+  }
+
+  Widget _buildCard(
+      BuildContext context, Map<String, dynamic> data, bool useGrid) {
+    final minPrice = _minPrice(data);
+    final image = _coverImage(data);
+    final symbol = data['divisa']?.toString() == 'eur' ? '€' : '\$';
+
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DestinationDetailScreen(
+            destinationId: data['id'] ?? '',
+            userId: widget.currentUserId,
+          ),
+        ),
+      ),
+      child: ProviderActivityCard(
+        imageUrl: image,
+        title: data['nombre']?.toString() ?? 'Actividad sin nombre',
+        location:
+            data['lugar']?.toString() ?? (data['estado']?.toString() ?? ''),
+        price: minPrice,
+        currencySymbol: symbol,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: widget.getActivities(widget.providerId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(40),
+            child: Center(
+                child: CircularProgressIndicator(
+                    color: Color.fromRGBO(17, 48, 73, 1))),
+          );
+        }
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(20),
+            child: Center(
+                child: Text('Error: ${snapshot.error}',
+                    style: TextStyle(color: Colors.grey[500]))),
+          );
+        }
+
+        // Filtrar ocultas
+        final allVisible =
+            (snapshot.data ?? []).where((d) => !_isHidden(d)).toList();
+
+        if (allVisible.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 30),
+            child: Center(
+              child: Column(
+                children: [
+                  Icon(HugeIcons.strokeRoundedTicket01,
+                      size: 40, color: Colors.grey[300]),
+                  const SizedBox(height: 10),
+                  Text("No hay actividades disponibles.",
+                      style: TextStyle(
+                          fontFamily: 'Poppins', color: Colors.grey[400])),
+                ],
+              ),
+            ),
+          );
+        }
+
+        // Obtener secciones únicas (no vacías)
+        final sections = allVisible
+            .map((d) => d['seccion']?.toString().trim() ?? '')
+            .where((s) => s.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+
+        final hasSections = sections.isNotEmpty;
+
+        // Actividades a mostrar según selección
+        List<Map<String, dynamic>> visibleActivities;
+        if (!hasSections || _selectedSection == null) {
+          visibleActivities = allVisible;
+        } else {
+          visibleActivities = allVisible
+              .where((d) =>
+                  (d['seccion']?.toString().trim() ?? '') == _selectedSection)
+              .toList();
+        }
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final bool useGrid = constraints.maxWidth > 500;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Encabezado + barra de secciones ──────────────────────
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 25),
+                  child: Row(
+                    children: [
+                      Container(
+                          width: 4,
+                          height: 24,
+                          decoration: BoxDecoration(
+                              color: widget.primaryColor,
+                              borderRadius: BorderRadius.circular(2))),
+                      const SizedBox(width: 10),
+                      Text(
+                        "Actividades disponibles",
+                        style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey[800]),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Barra de secciones (solo si hay secciones)
+                if (hasSections) ...[
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    height: 38,
+                    child: ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 25),
+                      scrollDirection: Axis.horizontal,
+                      itemCount: sections.length + 1, // +1 para "Todas"
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemBuilder: (context, i) {
+                        final isAll = i == 0;
+                        final label = isAll ? 'Todas' : sections[i - 1];
+                        final isSelected = isAll
+                            ? _selectedSection == null
+                            : _selectedSection == label;
+                        return GestureDetector(
+                          onTap: () => setState(
+                              () => _selectedSection = isAll ? null : label),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 18, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? widget.primaryColor
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                  color: isSelected
+                                      ? widget.primaryColor
+                                      : Colors.grey.shade300),
+                              boxShadow: isSelected
+                                  ? [
+                                      BoxShadow(
+                                          color: widget.primaryColor
+                                              .withValues(alpha: 0.2),
+                                          blurRadius: 6,
+                                          offset: const Offset(0, 3))
+                                    ]
+                                  : [],
+                            ),
+                            child: Text(
+                              label,
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 13,
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.w500,
+                                color: isSelected
+                                    ? Colors.white
+                                    : Colors.grey[700],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 16),
+
+                // ── Lista/Grid de actividades ─────────────────────────────
+                if (visibleActivities.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 30, horizontal: 25),
+                    child: Center(
+                      child: Text(
+                        'No hay actividades en esta sección.',
+                        style: TextStyle(
+                            fontFamily: 'Poppins', color: Colors.grey[400]),
+                      ),
+                    ),
+                  )
+                else if (useGrid)
+                  GridView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      childAspectRatio: 1.1,
+                    ),
+                    itemCount: visibleActivities.length,
+                    itemBuilder: (ctx, i) {
+                      try {
+                        return _buildCard(ctx, visibleActivities[i], true);
+                      } catch (e) {
+                        return Container(
+                            color: Colors.red.shade50,
+                            child: Center(
+                                child: Text('Error: $e',
+                                    style: const TextStyle(
+                                        color: Colors.red, fontSize: 11))));
+                      }
+                    },
+                  )
+                else
+                  ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: visibleActivities.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 20),
+                    itemBuilder: (ctx, i) {
+                      try {
+                        return _buildCard(ctx, visibleActivities[i], false);
+                      } catch (e, stack) {
+                        debugPrint('Error en card: $e\n$stack');
+                        return Container(
+                            color: Colors.red.shade50,
+                            child: Center(
+                                child: Text('Error: $e',
+                                    style: const TextStyle(
+                                        color: Colors.red, fontSize: 11))));
+                      }
+                    },
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// --- TARJETA DE ACTIVIDAD ---
 class ProviderActivityCard extends StatelessWidget {
   final String imageUrl;
   final String title;

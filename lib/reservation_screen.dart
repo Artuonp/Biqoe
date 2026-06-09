@@ -54,6 +54,10 @@ class ReservationScreenState extends State<ReservationScreen>
   List<PackageReservationData> packagesData = [];
   String? selectedPaymentMethod;
   List<String> paymentMethods = [];
+  // Lista completa de objetos de pago del proveedor (para múltiples cuentas)
+  List<Map<String, dynamic>> allPaymentMethodsData = [];
+  // Cuenta concreta elegida dentro del método seleccionado
+  Map<String, dynamic>? selectedAccountData;
   bool _isLoading = false;
 
   String? _realDocId;
@@ -301,10 +305,17 @@ class ReservationScreenState extends State<ReservationScreen>
         if (mounted) {
           setState(() {
             paymentMethods = [];
+            allPaymentMethodsData = [];
             if (rawPagos is Iterable) {
               for (var item in rawPagos) {
                 if (item is Map && item['metodo'] != null) {
-                  paymentMethods.add(item['metodo'].toString());
+                  final methodName = item['metodo'].toString();
+                  // Agregar a la lista única de nombres de métodos (sin duplicados)
+                  if (!paymentMethods.contains(methodName)) {
+                    paymentMethods.add(methodName);
+                  }
+                  // Guardar el objeto completo para mostrar sub-cuentas
+                  allPaymentMethodsData.add(Map<String, dynamic>.from(item));
                 }
               }
             }
@@ -622,6 +633,26 @@ class ReservationScreenState extends State<ReservationScreen>
       if (selectedPaymentMethod == null) {
         throw Exception('método de pago');
       }
+      // Si el método tiene múltiples cuentas y no se eligió ninguna → error
+      const noSubSelection = ['Efectivo', 'Gratis'];
+      if (!noSubSelection.contains(selectedPaymentMethod)) {
+        final accounts = allPaymentMethodsData
+            .where((m) => m['metodo'] == selectedPaymentMethod)
+            .toList();
+        if (accounts.length > 1 && selectedAccountData == null) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  'Por favor elige una cuenta de ${selectedPaymentMethod!}',
+                  style: GoogleFonts.poppins(color: Colors.white)),
+              backgroundColor: kPrimaryColor,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
+      }
       for (var packageData in packagesData) {
         if (packageData.package['internal_type'] == 'Reserva' &&
             packageData.selectedDate == null) {
@@ -736,6 +767,7 @@ class ReservationScreenState extends State<ReservationScreen>
               packagesData: cleanPackages,
               questionAnswers: Map<String, dynamic>.from(_questionAnswers),
               divisa: _divisa,
+              selectedAccountData: selectedAccountData,
             ),
           ),
         );
@@ -1469,47 +1501,167 @@ class ReservationScreenState extends State<ReservationScreen>
   }
 
   Widget _buildPaymentOptions() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: paymentMethods.map((method) {
-          bool isSelected = selectedPaymentMethod == method;
-          return GestureDetector(
-            onTap: () => setState(() => selectedPaymentMethod = method),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              margin: const EdgeInsets.only(right: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                  color: isSelected ? kPrimaryColor : Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                      color: isSelected ? kPrimaryColor : Colors.grey.shade300),
-                  boxShadow: isSelected
-                      ? [
-                          BoxShadow(
-                              color: kPrimaryColor.withValues(alpha: 0.2),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4))
-                        ]
-                      : []),
-              child: Row(children: [
-                Icon(
-                    method.contains('Zelle')
-                        ? Icons.attach_money
-                        : Icons.payment,
-                    color: isSelected ? Colors.white : Colors.grey,
-                    size: 18),
-                const SizedBox(width: 8),
-                Text(method,
+    // Métodos sin datos de cuenta (solo 1 por tipo, no necesitan sub-selección)
+    const noSubSelection = ['Efectivo', 'Gratis'];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Fila de chips de métodos ──────────────────────────────────────
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: paymentMethods.map((method) {
+              bool isSelected = selectedPaymentMethod == method;
+              IconData icon;
+              if (method == 'Gratis') {
+                icon = Icons.card_giftcard;
+              } else if (method == 'Efectivo') {
+                icon = Icons.payments_outlined;
+              } else if (method.contains('Zelle') ||
+                  method.contains('Zinli') ||
+                  method.contains('Binance')) {
+                icon = Icons.attach_money;
+              } else if (method == 'Transferencia') {
+                icon = Icons.account_balance;
+              } else {
+                icon = Icons.payment;
+              }
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    selectedPaymentMethod = method;
+                    // Si el método no necesita sub-selección, limpiar accountData
+                    if (noSubSelection.contains(method)) {
+                      selectedAccountData = null;
+                    } else {
+                      // Buscar cuentas de ese método
+                      final accounts = allPaymentMethodsData
+                          .where((m) => m['metodo'] == method)
+                          .toList();
+                      // Si solo hay una, preseleccionarla automáticamente
+                      if (accounts.length == 1) {
+                        selectedAccountData = accounts.first;
+                      } else {
+                        // Si hay varias, limpiar para que el usuario elija
+                        selectedAccountData = null;
+                      }
+                    }
+                  });
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  margin: const EdgeInsets.only(right: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                      color: isSelected ? kPrimaryColor : Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: isSelected
+                              ? kPrimaryColor
+                              : Colors.grey.shade300),
+                      boxShadow: isSelected
+                          ? [
+                              BoxShadow(
+                                  color: kPrimaryColor.withValues(alpha: 0.2),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 4))
+                            ]
+                          : []),
+                  child: Row(children: [
+                    Icon(icon,
+                        color: isSelected ? Colors.white : Colors.grey,
+                        size: 18),
+                    const SizedBox(width: 8),
+                    Text(method,
+                        style: GoogleFonts.poppins(
+                            color: isSelected ? Colors.white : Colors.grey[800],
+                            fontWeight: FontWeight.w500))
+                  ]),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+
+        // ── Sub-selección de cuenta cuando hay múltiples ─────────────────
+        if (selectedPaymentMethod != null &&
+            !noSubSelection.contains(selectedPaymentMethod)) ...[
+          Builder(builder: (_) {
+            final accounts = allPaymentMethodsData
+                .where((m) => m['metodo'] == selectedPaymentMethod)
+                .toList();
+            if (accounts.length <= 1) return const SizedBox.shrink();
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 14),
+                Text('Elige la cuenta:',
                     style: GoogleFonts.poppins(
-                        color: isSelected ? Colors.white : Colors.grey[800],
-                        fontWeight: FontWeight.w500))
-              ]),
-            ),
-          );
-        }).toList(),
-      ),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: kPrimaryColor)),
+                const SizedBox(height: 8),
+                ...accounts.map((acc) {
+                  final isChosen = selectedAccountData == acc;
+                  String subtitle = '';
+                  if (acc['metodo'] == 'Pago móvil') {
+                    subtitle = '${acc['banco']} · ${acc['telefono']}';
+                  } else if (acc['metodo'] == 'Transferencia') {
+                    subtitle =
+                        '${acc['banco']} · Cta: ${acc['numeroCuenta'] ?? ''}';
+                  } else {
+                    subtitle =
+                        '${acc['correo'] ?? ''} (${acc['titular'] ?? ''})';
+                  }
+                  return GestureDetector(
+                    onTap: () => setState(() => selectedAccountData = acc),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                          color: isChosen
+                              ? kPrimaryColor.withValues(alpha: 0.07)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color: isChosen
+                                  ? kPrimaryColor
+                                  : Colors.grey.shade200,
+                              width: isChosen ? 1.5 : 1)),
+                      child: Row(
+                        children: [
+                          Icon(
+                              isChosen
+                                  ? Icons.radio_button_checked
+                                  : Icons.radio_button_off,
+                              color: isChosen ? kPrimaryColor : Colors.grey,
+                              size: 18),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(subtitle,
+                                style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: isChosen
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                    color: isChosen
+                                        ? kPrimaryColor
+                                        : Colors.grey[700])),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            );
+          }),
+        ],
+      ],
     );
   }
 }
