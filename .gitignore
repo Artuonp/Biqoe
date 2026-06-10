@@ -43,3 +43,4 @@ app.*.map.json
 /android/app/release
 
 /assets/biqoe-app-firebase-adminsdk-fbsvc-067c9b5471.json
+.swiftpm/

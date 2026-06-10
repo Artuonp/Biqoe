@@ -27,7 +27,7 @@ end
 require File.expand_path(File.join(flutter_root, 'packages', 'flutter_tools', 'bin', 'podhelper'))
 
 target 'Runner' do
-  use_frameworks! :linkage => :static
+  use_frameworks!
   use_modular_headers!
 
   # ===== Añade los pods de Firebase manualmente =====
@@ -43,14 +43,15 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
-    target.build_configurations.each do |config|
-      config.build_settings['SWIFT_VERSION'] = '5.0'
-      config.build_settings['ENABLE_BITCODE'] = 'NO'
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
-      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= [
-        '$(inherited)',
-        'COCOAPODS=1'
-      ]
+    
+    # --- SCRIPT PARA SOLUCIONAR MULTIPLE COMMANDS PRODUCE (FIREBASE/SPM) ---
+    if target.name.start_with?("Firebase") || target.name.start_with?("grpc") || target.name.start_with?("absl") || target.name.start_with?("openssl")
+      target.build_configurations.each do |config|
+        # Evitar la creación de los metadatos de AppIntents que causan conflicto
+        config.build_settings['ASSETCATALOG_COMPILER_APPICON_NAME'] = nil
+        config.build_settings['ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME'] = nil
+      end
     end
+    # ----------------------------------------------------------------------
   end
 end
